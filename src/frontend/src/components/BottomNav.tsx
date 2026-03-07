@@ -1,0 +1,122 @@
+import {
+  BookOpen,
+  ClipboardList,
+  IndianRupee,
+  Layers,
+  PlusSquare,
+  Scissors,
+  Users,
+} from "lucide-react";
+import type { TabId } from "../App";
+
+interface BottomNavProps {
+  activeTab: TabId;
+  onTabChange: (tab: TabId) => void;
+}
+
+const NAV_ITEMS: Array<{
+  id: TabId;
+  label: string;
+  icon: React.ElementType;
+  ocid: string;
+}> = [
+  { id: "entry", label: "Entry", icon: PlusSquare, ocid: "nav.entry_tab" },
+  {
+    id: "history",
+    label: "History",
+    icon: ClipboardList,
+    ocid: "nav.history_tab",
+  },
+  {
+    id: "master_report",
+    label: "Masters",
+    icon: Users,
+    ocid: "nav.master_report_tab",
+  },
+  {
+    id: "article_report",
+    label: "Articles",
+    icon: BookOpen,
+    ocid: "nav.article_report_tab",
+  },
+  {
+    id: "payment",
+    label: "Payment",
+    icon: IndianRupee,
+    ocid: "nav.payment_tab",
+  },
+  {
+    id: "tailor",
+    label: "Tailors",
+    icon: Scissors,
+    ocid: "nav.tailor_tab",
+  },
+  {
+    id: "overlock",
+    label: "Overlock",
+    icon: Layers,
+    ocid: "nav.overlock_tab",
+  },
+];
+
+export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+  return (
+    <nav
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 z-40 w-full border-t"
+      style={{
+        maxWidth: "var(--app-max-width)",
+        height: "var(--nav-height)",
+        background: "oklch(var(--card))",
+        borderColor: "oklch(var(--border))",
+        boxShadow: "0 -2px 12px oklch(0.4 0.05 220 / 0.08)",
+      }}
+    >
+      <div className="flex h-full">
+        {NAV_ITEMS.map(({ id, label, icon: Icon, ocid }) => {
+          const isActive = activeTab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              data-ocid={ocid}
+              onClick={() => onTabChange(id)}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors px-0.5"
+              style={{
+                color: isActive
+                  ? "oklch(var(--primary))"
+                  : "oklch(var(--muted-foreground))",
+              }}
+              aria-label={label}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <div
+                className="flex items-center justify-center w-7 h-5 rounded-full transition-all"
+                style={{
+                  background: isActive
+                    ? "oklch(var(--primary) / 0.12)"
+                    : "transparent",
+                }}
+              >
+                <Icon
+                  className="w-4 h-4 transition-all"
+                  strokeWidth={isActive ? 2.5 : 1.8}
+                />
+              </div>
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: isActive ? 700 : 500,
+                  letterSpacing: "0.01em",
+                  fontFamily: "Cabinet Grotesk, sans-serif",
+                  lineHeight: 1.2,
+                }}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
