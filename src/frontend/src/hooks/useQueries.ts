@@ -142,16 +142,21 @@ export function useAddTailorRecord() {
       articleNo: string;
       tailorName: string;
       color: string;
+      size: string;
       quantity: number;
       pcsRate: number;
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
+      // Encode size into color field using "||" separator since backend has no size field
+      const colorWithSize = params.size
+        ? `${params.color}||${params.size}`
+        : params.color;
       return actor.addTailorRecord(
         params.date,
         params.articleNo,
         params.tailorName,
-        params.color,
+        colorWithSize,
         params.quantity,
         params.pcsRate,
         params.finalAmount,
@@ -213,19 +218,23 @@ export function useAddOverlockRecord() {
       date: string;
       articleNo: string;
       employeeName: string;
+      size: string;
       quantity: number;
       pcsRate: number;
-      rate: number;
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
+      // Encode size into employeeName field using "||" separator since backend has no size field
+      const nameWithSize = params.size
+        ? `${params.employeeName}||${params.size}`
+        : params.employeeName;
       return actor.addOverlockRecord(
         params.date,
         params.articleNo,
-        params.employeeName,
+        nameWithSize,
         params.quantity,
         params.pcsRate,
-        params.rate,
+        0,
         params.finalAmount,
       );
     },

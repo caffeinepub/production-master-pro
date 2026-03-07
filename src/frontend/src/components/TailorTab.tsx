@@ -29,6 +29,7 @@ interface FormState {
   articleNo: string;
   tailorName: string;
   color: string;
+  size: string;
   quantity: string;
   pcsRate: string;
 }
@@ -38,6 +39,7 @@ interface FormErrors {
   articleNo?: string;
   tailorName?: string;
   color?: string;
+  size?: string;
   quantity?: string;
   pcsRate?: string;
 }
@@ -46,11 +48,23 @@ function getTodayDate() {
   return new Date().toISOString().split("T")[0];
 }
 
+// color field encodes "color||size" -- decode helpers
+function decodeColor(colorField: string): string {
+  const idx = colorField.indexOf("||");
+  return idx >= 0 ? colorField.slice(0, idx) : colorField;
+}
+
+function decodeSize(colorField: string): string {
+  const idx = colorField.indexOf("||");
+  return idx >= 0 ? colorField.slice(idx + 2) : "";
+}
+
 const INITIAL_FORM: FormState = {
   date: getTodayDate(),
   articleNo: "",
   tailorName: "",
   color: "",
+  size: "",
   quantity: "",
   pcsRate: "",
 };
@@ -90,6 +104,7 @@ export function TailorTab() {
     if (!form.tailorName.trim())
       newErrors.tailorName = "Tailor Name is required";
     if (!form.color.trim()) newErrors.color = "Color is required";
+    if (!form.size.trim()) newErrors.size = "Size is required";
     if (
       !form.quantity ||
       Number.isNaN(Number(form.quantity)) ||
@@ -117,6 +132,7 @@ export function TailorTab() {
         articleNo: form.articleNo.trim(),
         tailorName: form.tailorName.trim(),
         color: form.color.trim(),
+        size: form.size.trim(),
         quantity: qty,
         pcsRate: rate,
         finalAmount: amt,
@@ -419,6 +435,35 @@ export function TailorTab() {
                   style={{ color: "oklch(var(--destructive))" }}
                 >
                   {errors.color}
+                </p>
+              )}
+            </div>
+
+            {/* Size */}
+            <div className="space-y-1">
+              <Label htmlFor="tailor-size" className="data-label">
+                Size
+              </Label>
+              <Input
+                id="tailor-size"
+                data-ocid="tailor.size_input"
+                type="text"
+                placeholder="e.g. S, M, L, XL"
+                value={form.size}
+                onChange={handleChange("size")}
+                className="input-factory"
+                style={
+                  errors.size
+                    ? { borderColor: "oklch(var(--destructive))" }
+                    : {}
+                }
+              />
+              {errors.size && (
+                <p
+                  className="text-xs font-medium"
+                  style={{ color: "oklch(var(--destructive))" }}
+                >
+                  {errors.size}
                 </p>
               )}
             </div>
@@ -778,7 +823,15 @@ export function TailorTab() {
                     </div>
                     <div>
                       <div className="data-label">Color</div>
-                      <div className="data-value text-sm">{record.color}</div>
+                      <div className="data-value text-sm">
+                        {decodeColor(record.color) || "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="data-label">Size</div>
+                      <div className="data-value text-sm">
+                        {decodeSize(record.color) || "—"}
+                      </div>
                     </div>
                     <div>
                       <div className="data-label">Quantity</div>

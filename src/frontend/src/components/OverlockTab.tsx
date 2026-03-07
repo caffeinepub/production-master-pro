@@ -30,7 +30,7 @@ interface FormState {
   employeeName: string;
   quantity: string;
   pcsRate: string;
-  rate: string;
+  size: string;
 }
 
 interface FormErrors {
@@ -39,11 +39,22 @@ interface FormErrors {
   employeeName?: string;
   quantity?: string;
   pcsRate?: string;
-  rate?: string;
+  size?: string;
 }
 
 function getTodayDate() {
   return new Date().toISOString().split("T")[0];
+}
+
+// employeeName field encodes "name||size" -- decode helpers
+function decodeName(nameField: string): string {
+  const idx = nameField.indexOf("||");
+  return idx >= 0 ? nameField.slice(0, idx) : nameField;
+}
+
+function decodeSizeFromName(nameField: string): string {
+  const idx = nameField.indexOf("||");
+  return idx >= 0 ? nameField.slice(idx + 2) : "";
 }
 
 const INITIAL_FORM: FormState = {
@@ -52,7 +63,7 @@ const INITIAL_FORM: FormState = {
   employeeName: "",
   quantity: "",
   pcsRate: "",
-  rate: "",
+  size: "",
 };
 
 export function OverlockTab() {
@@ -102,8 +113,7 @@ export function OverlockTab() {
       Number(form.pcsRate) <= 0
     )
       newErrors.pcsRate = "Enter valid Pcs Rate";
-    if (!form.rate || Number.isNaN(Number(form.rate)) || Number(form.rate) < 0)
-      newErrors.rate = "Enter valid rate";
+    if (!form.size.trim()) newErrors.size = "Size is required";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -112,16 +122,15 @@ export function OverlockTab() {
     if (!validate()) return;
     const qty = Number(form.quantity);
     const pcsRate = Number(form.pcsRate);
-    const rate = Number(form.rate);
     const amt = qty * pcsRate;
     try {
       await addRecord.mutateAsync({
         date: form.date,
         articleNo: form.articleNo.trim(),
         employeeName: form.employeeName.trim(),
+        size: form.size.trim(),
         quantity: qty,
         pcsRate,
-        rate,
         finalAmount: amt,
       });
       toast.success("Overlock record saved!", {
@@ -459,33 +468,31 @@ export function OverlockTab() {
               </div>
             </div>
 
-            {/* Rate */}
+            {/* Size */}
             <div className="space-y-1">
-              <Label htmlFor="overlock-rate" className="data-label">
-                Rate (₨)
+              <Label htmlFor="overlock-size" className="data-label">
+                Size
               </Label>
               <Input
-                id="overlock-rate"
-                data-ocid="overlock.rate_input"
-                type="number"
-                inputMode="decimal"
-                placeholder="0.00"
-                step="0.01"
-                value={form.rate}
-                onChange={handleChange("rate")}
+                id="overlock-size"
+                data-ocid="overlock.size_input"
+                type="text"
+                placeholder="e.g. S, M, L, XL"
+                value={form.size}
+                onChange={handleChange("size")}
                 className="input-factory"
                 style={
-                  errors.rate
+                  errors.size
                     ? { borderColor: "oklch(var(--destructive))" }
                     : {}
                 }
               />
-              {errors.rate && (
+              {errors.size && (
                 <p
                   className="text-xs font-medium"
                   style={{ color: "oklch(var(--destructive))" }}
                 >
-                  {errors.rate}
+                  {errors.size}
                 </p>
               )}
             </div>
@@ -663,7 +670,7 @@ export function OverlockTab() {
                             color: "oklch(var(--foreground))",
                           }}
                         >
-                          {name}
+                          {decodeName(name)}
                         </div>
                         <div className="data-label mt-0.5">
                           {totalQty.toLocaleString()} pcs
@@ -749,7 +756,7 @@ export function OverlockTab() {
                           color: "oklch(var(--foreground))",
                         }}
                       >
-                        {record.employeeName}
+                        {decodeName(record.employeeName)}
                       </span>
                       <span
                         className="text-xs px-2 py-0.5 rounded-full shrink-0"
@@ -768,7 +775,7 @@ export function OverlockTab() {
                       variant="ghost"
                       data-ocid={`overlock.record.delete_button.${idx + 1}`}
                       onClick={() =>
-                        handleDelete(record.id, record.employeeName)
+                        handleDelete(record.id, decodeName(record.employeeName))
                       }
                       disabled={deleteRecord.isPending}
                       className="ml-2 shrink-0 h-7 w-7 p-0"
@@ -785,9 +792,9 @@ export function OverlockTab() {
                       <div className="data-value text-sm">{record.date}</div>
                     </div>
                     <div>
-                      <div className="data-label">Rate</div>
+                      <div className="data-label">Size</div>
                       <div className="data-value text-sm">
-                        ₨ {record.rate.toFixed(2)}
+                        {decodeSizeFromName(record.employeeName) || "—"}
                       </div>
                     </div>
                     <div>

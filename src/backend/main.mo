@@ -5,10 +5,10 @@ import Array "mo:core/Array";
 import Text "mo:core/Text";
 import Order "mo:core/Order";
 import Iter "mo:core/Iter";
-import Migration "migration";
+
 import List "mo:core/List";
 
-(with migration = Migration.run)
+
 actor {
   type ProductionRecord = {
     id : Nat;
