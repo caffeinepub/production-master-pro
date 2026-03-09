@@ -1,32 +1,28 @@
 # Production Master Pro
 
 ## Current State
-The app has Entry, History, Party Head (Master Report), Article Report, Payment, Tailor, and Overlock tabs. All text input fields (Party Name, Article Number, Size, etc.) are plain `<input>` elements with no autocomplete or dropdown behavior.
+TailorTab has an add-record form where tailors enter article number, quantity stitched, rate, etc. Production records in EntryTab store `cutByMaster` (total cutting quantity assigned to party head) per article. There is no linkage between tailor stitching entries and the total cutting quantity from production records.
 
 ## Requested Changes (Diff)
 
 ### Add
-- A reusable `SearchableDropdown` component that:
-  - Shows a text input with a dropdown arrow icon on the right
-  - On focus/click, opens a dropdown list of previously saved values from localStorage
-  - Allows typing to filter/search existing options
-  - Shows an "Add new" option when typed value is not in the list
-  - On selecting "Add new", saves the new value to localStorage for future use
-  - Keyboard navigable and scrollable
-- A `useDropdownOptions` hook to read/write option lists per field key from localStorage
+- When an article number is selected/entered in the Tailor form, automatically look up total `cutByMaster` from all production records matching that article.
+- Compute total pieces already stitched by all tailors for that article (sum of tailor record quantities).
+- Compute and display "Remaining Cutting" = totalCutByMaster - totalStitched.
+- Show an info card in the Tailor add-form showing: Total Cut by Master, Already Stitched, Remaining pieces for the selected article.
+- Validation: block saving if quantity entered > remaining cutting quantity; show clear error message.
 
 ### Modify
-- EntryTab: Replace plain inputs for Party Name and Article Number with `SearchableDropdown`
-- TailorTab: Replace plain inputs for Party Name (if present), Article Number, and Size with `SearchableDropdown`
-- OverlockTab: Replace plain inputs for Employee Name, Article Number, and Size with `SearchableDropdown`
+- TailorTab validate() function: add check for quantity vs remaining cutting.
+- TailorTab form: after article selection, fetch/compute remaining and show info banner.
 
 ### Remove
-- Nothing removed
+- Nothing removed.
 
 ## Implementation Plan
-1. Create `src/frontend/src/hooks/useDropdownOptions.ts` — manages localStorage option lists per key
-2. Create `src/frontend/src/components/SearchableDropdown.tsx` — reusable combobox UI
-3. Update EntryTab to use SearchableDropdown for Party Name and Article Number
-4. Update TailorTab to use SearchableDropdown for Article Number and Size
-5. Update OverlockTab to use SearchableDropdown for Employee Name, Article Number, and Size
-6. Validate (lint + typecheck + build) and fix any errors
+1. In TailorTab.tsx, import and use `useGetRecords` to fetch production records.
+2. Derive `articleCuttingMap`: for each articleNo, sum `cutByMaster` across all production records.
+3. Derive `articleStitchedMap`: for each articleNo, sum `quantity` across all tailor records.
+4. When `form.articleNo` is set, compute `remainingCutting = articleCuttingMap[articleNo] - articleStitchedMap[articleNo]`.
+5. Render an info banner below the Article No field showing the cutting stats (only when articleNo matches a production record).
+6. In validate(), if `remainingCutting >= 0` and `quantity > remainingCutting`, add error "Cannot exceed remaining cutting of X pcs".

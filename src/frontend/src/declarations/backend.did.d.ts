@@ -67,6 +67,29 @@ export interface _SERVICE {
   'getRecords' : ActorMethod<[], Array<ProductionRecord>>,
   'getTailorRecords' : ActorMethod<[], Array<TailorRecord>>,
   'getTailorReport' : ActorMethod<[], Array<[string, number, number]>>,
+  'updateOverlockRecord' : ActorMethod<
+    [bigint, string, string, string, string, number, number, number],
+    boolean
+  >,
+  'updateRecord' : ActorMethod<
+    [
+      bigint,
+      string,
+      string,
+      string,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ],
+    boolean
+  >,
+  'updateTailorRecord' : ActorMethod<
+    [bigint, string, string, string, string, string, number, number, number],
+    boolean
+  >,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

@@ -137,6 +137,9 @@ export interface backendInterface {
     getRecords(): Promise<Array<ProductionRecord>>;
     getTailorRecords(): Promise<Array<TailorRecord>>;
     getTailorReport(): Promise<Array<[string, number, number]>>;
+    updateOverlockRecord(id: bigint, date: string, articleNo: string, employeeName: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<boolean>;
+    updateRecord(id: bigint, date: string, articleNo: string, masterName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<boolean>;
+    updateTailorRecord(id: bigint, date: string, articleNo: string, tailorName: string, color: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<boolean>;
 }
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
@@ -333,6 +336,48 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getTailorReport();
+            return result;
+        }
+    }
+    async updateOverlockRecord(arg0: bigint, arg1: string, arg2: string, arg3: string, arg4: string, arg5: number, arg6: number, arg7: number): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateOverlockRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateOverlockRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+            return result;
+        }
+    }
+    async updateRecord(arg0: bigint, arg1: string, arg2: string, arg3: string, arg4: number, arg5: number, arg6: number, arg7: number, arg8: number, arg9: number): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
+            return result;
+        }
+    }
+    async updateTailorRecord(arg0: bigint, arg1: string, arg2: string, arg3: string, arg4: string, arg5: string, arg6: number, arg7: number, arg8: number): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
             return result;
         }
     }

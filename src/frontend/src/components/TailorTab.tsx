@@ -9,9 +9,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  AlertTriangle,
   CalendarRange,
   ChevronDown,
   ChevronUp,
+  Info,
   LayoutList,
   Loader2,
   MessageCircle,
@@ -29,6 +31,7 @@ import type { TailorRecord } from "../backend";
 import {
   useAddTailorRecord,
   useDeleteTailorRecord,
+  useGetRecords,
   useGetTailorRecords,
   useGetTailorReport,
 } from "../hooks/useQueries";
@@ -165,8 +168,40 @@ export function TailorTab() {
   const { data: records = [], isLoading: recordsLoading } =
     useGetTailorRecords();
   const { data: report = [] } = useGetTailorReport();
+  const { data: productionRecords = [] } = useGetRecords();
   const addRecord = useAddTailorRecord();
   const deleteRecord = useDeleteTailorRecord();
+
+  // Compute article cutting stats
+  const articleCuttingMap = productionRecords.reduce<Record<string, number>>(
+    (acc, r) => {
+      acc[r.articleNo] = (acc[r.articleNo] || 0) + r.cutByMaster;
+      return acc;
+    },
+    {},
+  );
+
+  const articleStitchedMap = records.reduce<Record<string, number>>(
+    (acc, r) => {
+      acc[r.articleNo] = (acc[r.articleNo] || 0) + r.quantity;
+      return acc;
+    },
+    {},
+  );
+
+  const selectedArticleCutting =
+    form.articleNo && articleCuttingMap[form.articleNo] !== undefined
+      ? articleCuttingMap[form.articleNo]
+      : null;
+
+  const selectedArticleStitched = form.articleNo
+    ? articleStitchedMap[form.articleNo] || 0
+    : 0;
+
+  const remainingCutting =
+    selectedArticleCutting !== null
+      ? selectedArticleCutting - selectedArticleStitched
+      : null;
 
   const finalAmount =
     (Number(form.quantity) || 0) * (Number(form.pcsRate) || 0);
@@ -203,6 +238,11 @@ export function TailorTab() {
       Number(form.quantity) <= 0
     )
       newErrors.quantity = "Enter valid quantity";
+    else if (
+      remainingCutting !== null &&
+      Number(form.quantity) > remainingCutting
+    )
+      newErrors.quantity = `Cannot exceed remaining cutting of ${remainingCutting.toLocaleString()} pcs`;
     if (
       !form.pcsRate ||
       Number.isNaN(Number(form.pcsRate)) ||
@@ -650,6 +690,107 @@ export function TailorTab() {
                 >
                   {errors.articleNo}
                 </p>
+              )}
+              {/* Cutting Stats Banner */}
+              {selectedArticleCutting !== null && (
+                <div
+                  data-ocid="tailor.cutting_stats_panel"
+                  className="rounded-lg p-3 mt-1"
+                  style={{
+                    background:
+                      remainingCutting !== null && remainingCutting <= 0
+                        ? "oklch(var(--destructive) / 0.08)"
+                        : "oklch(var(--primary) / 0.07)",
+                    border: `1px solid ${remainingCutting !== null && remainingCutting <= 0 ? "oklch(var(--destructive) / 0.3)" : "oklch(var(--primary) / 0.2)"}`,
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 mb-2">
+                    {remainingCutting !== null && remainingCutting <= 0 ? (
+                      <AlertTriangle
+                        className="w-3.5 h-3.5"
+                        style={{ color: "oklch(var(--destructive))" }}
+                      />
+                    ) : (
+                      <Info
+                        className="w-3.5 h-3.5"
+                        style={{ color: "oklch(var(--primary))" }}
+                      />
+                    )}
+                    <span
+                      className="text-xs font-semibold"
+                      style={{
+                        fontFamily: "Cabinet Grotesk, sans-serif",
+                        color:
+                          remainingCutting !== null && remainingCutting <= 0
+                            ? "oklch(var(--destructive))"
+                            : "oklch(var(--primary))",
+                      }}
+                    >
+                      Cutting Status — {form.articleNo}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <div
+                        className="text-xs"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        Total Cut
+                      </div>
+                      <div
+                        className="font-bold text-sm"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        {selectedArticleCutting.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        className="text-xs"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        Stitched
+                      </div>
+                      <div
+                        className="font-bold text-sm"
+                        style={{
+                          color: "oklch(var(--warning, var(--foreground)))",
+                        }}
+                      >
+                        {selectedArticleStitched.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div
+                        className="text-xs"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        Remaining
+                      </div>
+                      <div
+                        className="font-bold text-sm"
+                        style={{
+                          color:
+                            remainingCutting !== null && remainingCutting <= 0
+                              ? "oklch(var(--destructive))"
+                              : "oklch(var(--success))",
+                        }}
+                      >
+                        {remainingCutting !== null
+                          ? remainingCutting.toLocaleString()
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  {remainingCutting !== null && remainingCutting <= 0 && (
+                    <p
+                      className="text-xs text-center mt-2 font-medium"
+                      style={{ color: "oklch(var(--destructive))" }}
+                    >
+                      No remaining cutting pieces for this article
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 

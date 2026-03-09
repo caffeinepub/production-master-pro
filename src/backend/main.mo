@@ -72,10 +72,10 @@ actor {
     };
   };
 
-  stable var nextId = 0;
-  stable var productionRecords = Map.empty<Nat, ProductionRecord>();
-  stable var tailorRecords = Map.empty<Nat, TailorRecord>();
-  stable var overlockRecords = Map.empty<Nat, OverlockRecord>();
+  var nextId = 0;
+  let productionRecords = Map.empty<Nat, ProductionRecord>();
+  let tailorRecords = Map.empty<Nat, TailorRecord>();
+  let overlockRecords = Map.empty<Nat, OverlockRecord>();
 
   // ProductionRecord functions
 
@@ -120,6 +120,39 @@ actor {
       true;
     } else {
       false;
+    };
+  };
+
+  public shared ({ caller }) func updateRecord(
+    id : Nat,
+    date : Text,
+    articleNo : Text,
+    masterName : Text,
+    dispatchedPcs : Float,
+    cutByMaster : Float,
+    rate : Float,
+    percentage : Float,
+    totalPcs : Float,
+    finalAmount : Float,
+  ) : async Bool {
+    switch (productionRecords.get(id)) {
+      case (?_) {
+        let updatedRecord : ProductionRecord = {
+          id;
+          date;
+          articleNo;
+          masterName;
+          dispatchedPcs;
+          cutByMaster;
+          rate;
+          percentage;
+          totalPcs;
+          finalAmount;
+        };
+        productionRecords.add(id, updatedRecord);
+        true;
+      };
+      case (null) { false };
     };
   };
 
@@ -223,6 +256,37 @@ actor {
     };
   };
 
+  public shared ({ caller }) func updateTailorRecord(
+    id : Nat,
+    date : Text,
+    articleNo : Text,
+    tailorName : Text,
+    color : Text,
+    size : Text,
+    quantity : Float,
+    pcsRate : Float,
+    finalAmount : Float,
+  ) : async Bool {
+    switch (tailorRecords.get(id)) {
+      case (?_) {
+        let updatedRecord : TailorRecord = {
+          id;
+          date;
+          articleNo;
+          tailorName;
+          color;
+          size;
+          quantity;
+          pcsRate;
+          finalAmount;
+        };
+        tailorRecords.add(id, updatedRecord);
+        true;
+      };
+      case (null) { false };
+    };
+  };
+
   public query ({ caller }) func getTailorReport() : async [(Text, Float, Float)] {
     let tailorMap = Map.empty<Text, (Float, Float)>();
 
@@ -287,6 +351,35 @@ actor {
       true;
     } else {
       false;
+    };
+  };
+
+  public shared ({ caller }) func updateOverlockRecord(
+    id : Nat,
+    date : Text,
+    articleNo : Text,
+    employeeName : Text,
+    size : Text,
+    quantity : Float,
+    pcsRate : Float,
+    finalAmount : Float,
+  ) : async Bool {
+    switch (overlockRecords.get(id)) {
+      case (?_) {
+        let updatedRecord : OverlockRecord = {
+          id;
+          date;
+          articleNo;
+          employeeName;
+          size;
+          quantity;
+          pcsRate;
+          finalAmount;
+        };
+        overlockRecords.add(id, updatedRecord);
+        true;
+      };
+      case (null) { false };
     };
   };
 

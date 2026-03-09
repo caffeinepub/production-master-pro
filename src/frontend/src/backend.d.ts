@@ -55,4 +55,7 @@ export interface backendInterface {
     getRecords(): Promise<Array<ProductionRecord>>;
     getTailorRecords(): Promise<Array<TailorRecord>>;
     getTailorReport(): Promise<Array<[string, number, number]>>;
+    updateOverlockRecord(id: bigint, date: string, articleNo: string, employeeName: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<boolean>;
+    updateRecord(id: bigint, date: string, articleNo: string, masterName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<boolean>;
+    updateTailorRecord(id: bigint, date: string, articleNo: string, tailorName: string, color: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<boolean>;
 }
