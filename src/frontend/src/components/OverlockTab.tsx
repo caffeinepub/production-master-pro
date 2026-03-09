@@ -32,6 +32,7 @@ import {
   useGetOverlockRecords,
   useGetOverlockReport,
 } from "../hooks/useQueries";
+import { SearchableDropdown } from "./SearchableDropdown";
 
 type SubTab = "add" | "view";
 type ViewMode = "all" | "artwise";
@@ -619,19 +620,17 @@ export function OverlockTab() {
               <Label htmlFor="overlock-article" className="data-label">
                 Article No.
               </Label>
-              <Input
+              <SearchableDropdown
                 id="overlock-article"
                 data-ocid="overlock.article_input"
-                type="text"
+                fieldKey="article_no"
                 placeholder="e.g. ART-2024-001"
                 value={form.articleNo}
-                onChange={handleChange("articleNo")}
-                className="input-factory"
-                style={
-                  errors.articleNo
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
+                onChange={(val) => {
+                  setForm((prev) => ({ ...prev, articleNo: val }));
+                  setErrors((prev) => ({ ...prev, articleNo: undefined }));
+                }}
+                hasError={!!errors.articleNo}
               />
               {errors.articleNo && (
                 <p
@@ -647,19 +646,17 @@ export function OverlockTab() {
               <Label htmlFor="overlock-employee" className="data-label">
                 Employee Name
               </Label>
-              <Input
+              <SearchableDropdown
                 id="overlock-employee"
                 data-ocid="overlock.employee_input"
-                type="text"
+                fieldKey="overlock_employee"
                 placeholder="Enter employee name"
                 value={form.employeeName}
-                onChange={handleChange("employeeName")}
-                className="input-factory"
-                style={
-                  errors.employeeName
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
+                onChange={(val) => {
+                  setForm((prev) => ({ ...prev, employeeName: val }));
+                  setErrors((prev) => ({ ...prev, employeeName: undefined }));
+                }}
+                hasError={!!errors.employeeName}
               />
               {errors.employeeName && (
                 <p
@@ -735,19 +732,17 @@ export function OverlockTab() {
               <Label htmlFor="overlock-size" className="data-label">
                 Size
               </Label>
-              <Input
+              <SearchableDropdown
                 id="overlock-size"
                 data-ocid="overlock.size_input"
-                type="text"
+                fieldKey="overlock_size"
                 placeholder="e.g. S, M, L, XL"
                 value={form.size}
-                onChange={handleChange("size")}
-                className="input-factory"
-                style={
-                  errors.size
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
+                onChange={(val) => {
+                  setForm((prev) => ({ ...prev, size: val }));
+                  setErrors((prev) => ({ ...prev, size: undefined }));
+                }}
+                hasError={!!errors.size}
               />
               {errors.size && (
                 <p

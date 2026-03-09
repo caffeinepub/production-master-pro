@@ -4,7 +4,8 @@ import { Label } from "@/components/ui/label";
 import { Calculator, Package, RotateCcw, Save, TrendingUp } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { useAddRecord, useGetMasterNames } from "../hooks/useQueries";
+import { useAddRecord } from "../hooks/useQueries";
+import { SearchableDropdown } from "./SearchableDropdown";
 
 interface FormState {
   date: string;
@@ -55,7 +56,6 @@ export function EntryTab() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [showResult, setShowResult] = useState(false);
 
-  const { data: masterNames = [] } = useGetMasterNames();
   const addRecord = useAddRecord();
 
   const calc = calcResults(form);
@@ -267,19 +267,18 @@ export function EntryTab() {
           <Label htmlFor="entry-article" className="data-label">
             Article Number
           </Label>
-          <Input
+          <SearchableDropdown
             id="entry-article"
             data-ocid="entry.article_input"
-            type="text"
+            fieldKey="article_no"
             placeholder="e.g. ART-2024-001"
             value={form.articleNo}
-            onChange={handleChange("articleNo")}
-            className="input-factory"
-            style={
-              errors.articleNo
-                ? { borderColor: "oklch(var(--destructive))" }
-                : {}
-            }
+            onChange={(val) => {
+              setForm((prev) => ({ ...prev, articleNo: val }));
+              setErrors((prev) => ({ ...prev, articleNo: undefined }));
+              setShowResult(false);
+            }}
+            hasError={!!errors.articleNo}
           />
           {errors.articleNo && (
             <p
@@ -296,26 +295,19 @@ export function EntryTab() {
           <Label htmlFor="entry-master" className="data-label">
             Party Name
           </Label>
-          <Input
+          <SearchableDropdown
             id="entry-master"
             data-ocid="entry.master_input"
-            type="text"
-            list="master-names-list"
+            fieldKey="party_name"
             placeholder="Type or select party name"
             value={form.masterName}
-            onChange={handleChange("masterName")}
-            className="input-factory"
-            style={
-              errors.masterName
-                ? { borderColor: "oklch(var(--destructive))" }
-                : {}
-            }
+            onChange={(val) => {
+              setForm((prev) => ({ ...prev, masterName: val }));
+              setErrors((prev) => ({ ...prev, masterName: undefined }));
+              setShowResult(false);
+            }}
+            hasError={!!errors.masterName}
           />
-          <datalist id="master-names-list">
-            {masterNames.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
           {errors.masterName && (
             <p
               className="text-xs font-medium"
