@@ -4,7 +4,7 @@ import type { TabId } from "../App";
 const TAB_TITLES: Record<TabId, string> = {
   entry: "New Entry",
   history: "Production History",
-  master_report: "Master Payment Report",
+  master_report: "Party Head",
   article_report: "Article Production Report",
   payment: "Payment Summary",
   tailor: "Tailor Records",

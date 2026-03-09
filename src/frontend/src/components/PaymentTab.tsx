@@ -2,11 +2,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, IndianRupee, TrendingUp, Wallet } from "lucide-react";
+import {
+  Download,
+  IndianRupee,
+  Lock,
+  LockOpen,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useGetRecords } from "../hooks/useQueries";
 import { exportToCSV } from "../utils/csvExport";
+
+const PAYMENT_PIN = "8807";
 
 function getFirstDayOfMonth() {
   const now = new Date();
@@ -18,6 +27,125 @@ function getTodayDate() {
 }
 
 export function PaymentTab() {
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState(false);
+
+  const handleUnlock = () => {
+    if (pin === PAYMENT_PIN) {
+      setIsUnlocked(true);
+      setPinError(false);
+      setPin("");
+    } else {
+      setPinError(true);
+      setPin("");
+    }
+  };
+
+  const handleLock = () => {
+    setIsUnlocked(false);
+    setPin("");
+    setPinError(false);
+  };
+
+  if (!isUnlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6">
+        <div
+          className="w-full max-w-xs rounded-2xl p-8 space-y-6"
+          style={{
+            background: "oklch(var(--card))",
+            border: "1.5px solid oklch(var(--border))",
+            boxShadow: "0 4px 24px oklch(0.3 0.05 220 / 0.1)",
+          }}
+        >
+          {/* Icon */}
+          <div className="flex flex-col items-center gap-3">
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center"
+              style={{
+                background: "oklch(var(--primary) / 0.12)",
+                border: "2px solid oklch(var(--primary) / 0.25)",
+              }}
+            >
+              <Lock
+                className="w-7 h-7"
+                style={{ color: "oklch(var(--primary))" }}
+              />
+            </div>
+            <div className="text-center">
+              <div
+                className="font-heading font-bold text-lg leading-tight"
+                style={{ fontFamily: "Cabinet Grotesk, sans-serif" }}
+              >
+                Payment Access
+              </div>
+              <div
+                className="text-sm mt-1"
+                style={{ color: "oklch(var(--muted-foreground))" }}
+              >
+                Enter PIN to view payment data
+              </div>
+            </div>
+          </div>
+
+          {/* PIN Input */}
+          <div className="space-y-2">
+            <Label className="data-label sr-only">PIN</Label>
+            <Input
+              data-ocid="payment.pin_input"
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="Enter 4-digit PIN"
+              value={pin}
+              onChange={(e) => {
+                setPin(e.target.value);
+                setPinError(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleUnlock();
+              }}
+              className="input-factory text-center text-xl tracking-widest"
+              style={{
+                borderColor: pinError ? "oklch(var(--destructive))" : undefined,
+                letterSpacing: "0.4em",
+              }}
+              autoFocus
+            />
+            {pinError && (
+              <p
+                data-ocid="payment.pin_error_state"
+                className="text-xs font-medium text-center"
+                style={{ color: "oklch(var(--destructive))" }}
+              >
+                Incorrect PIN. Try again.
+              </p>
+            )}
+          </div>
+
+          <Button
+            data-ocid="payment.unlock_button"
+            onClick={handleUnlock}
+            className="w-full"
+            size="lg"
+            style={{
+              background: "oklch(var(--primary))",
+              color: "oklch(var(--primary-foreground))",
+            }}
+          >
+            <LockOpen className="w-4 h-4 mr-2" />
+            Unlock
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return <PaymentContent onLock={handleLock} />;
+}
+
+function PaymentContent({ onLock }: { onLock: () => void }) {
   const [fromDate, setFromDate] = useState(getFirstDayOfMonth());
   const [toDate, setToDate] = useState(getTodayDate());
 
@@ -75,7 +203,7 @@ export function PaymentTab() {
       return;
     }
     const headers = [
-      "Master Name",
+      "Party Name",
       "Records",
       "Dispatched Pcs",
       "Pending Pcs",
@@ -94,6 +222,21 @@ export function PaymentTab() {
 
   return (
     <div className="px-4 py-4 space-y-4">
+      {/* Lock button */}
+      <div className="flex justify-end">
+        <Button
+          data-ocid="payment.lock_button"
+          variant="outline"
+          size="sm"
+          onClick={onLock}
+          className="gap-2 h-8 text-xs"
+          style={{ color: "oklch(var(--muted-foreground))" }}
+        >
+          <Lock className="w-3.5 h-3.5" />
+          Lock
+        </Button>
+      </div>
+
       {/* Date Range Filter */}
       <div
         className="rounded-lg p-4 space-y-3"
@@ -243,7 +386,7 @@ export function PaymentTab() {
         </div>
       )}
 
-      {/* Per-Master Breakdown */}
+      {/* Per-Party Breakdown */}
       {!isLoading && byMaster.length > 0 && (
         <div className="space-y-3">
           {/* Header */}
@@ -257,7 +400,7 @@ export function PaymentTab() {
                 className="data-label font-semibold"
                 style={{ color: "oklch(var(--foreground))" }}
               >
-                Payment by Master
+                Payment by Party
               </span>
             </div>
             <Button
@@ -272,14 +415,16 @@ export function PaymentTab() {
             </Button>
           </div>
 
-          {/* Master Cards */}
+          {/* Party Cards */}
           <div data-ocid="payment.list" className="space-y-2">
             {byMaster.map(([masterName, data], index) => {
-              const ocidSuffix = index < 3 ? `.${index + 1}` : "";
+              const ocidIndex = index + 1;
+              const ocid =
+                ocidIndex <= 3 ? `payment.item.${ocidIndex}` : "payment.item";
               return (
                 <div
                   key={masterName}
-                  data-ocid={`payment.item${ocidSuffix}`}
+                  data-ocid={ocid}
                   className="rounded-lg border p-4 space-y-3"
                   style={{
                     background: "oklch(var(--card))",

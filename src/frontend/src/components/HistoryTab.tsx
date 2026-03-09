@@ -171,7 +171,7 @@ export function HistoryTab() {
     const headers = [
       "Date",
       "Article No",
-      "Master Name",
+      "Party Name",
       "Dispatched Pcs",
       "Cut by Master",
       "Pending Pcs",
@@ -394,11 +394,11 @@ export function HistoryTab() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="data-label">Master Name</Label>
+              <Label className="data-label">Party Name</Label>
               <Input
                 data-ocid="history.edit.master_input"
                 type="text"
-                placeholder="Enter master name"
+                placeholder="Enter party name"
                 value={editForm.masterName}
                 onChange={(e) =>
                   setEditForm((p) => ({ ...p, masterName: e.target.value }))

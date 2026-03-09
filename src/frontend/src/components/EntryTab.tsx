@@ -75,7 +75,7 @@ export function EntryTab() {
     if (!form.date) newErrors.date = "Date is required";
     if (!form.articleNo.trim()) newErrors.articleNo = "Article No. is required";
     if (!form.masterName.trim())
-      newErrors.masterName = "Master Name is required";
+      newErrors.masterName = "Party Name is required";
     if (!form.dispatchedPcs || Number.isNaN(Number(form.dispatchedPcs)))
       newErrors.dispatchedPcs = "Enter valid dispatched pieces";
     if (!form.cutByMaster || Number.isNaN(Number(form.cutByMaster)))
@@ -291,17 +291,17 @@ export function EntryTab() {
           )}
         </div>
 
-        {/* Master Name with datalist */}
+        {/* Party Name with datalist */}
         <div className="space-y-1">
           <Label htmlFor="entry-master" className="data-label">
-            Master Name
+            Party Name
           </Label>
           <Input
             id="entry-master"
             data-ocid="entry.master_input"
             type="text"
             list="master-names-list"
-            placeholder="Type or select master name"
+            placeholder="Type or select party name"
             value={form.masterName}
             onChange={handleChange("masterName")}
             className="input-factory"

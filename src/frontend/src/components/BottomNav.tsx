@@ -29,7 +29,7 @@ const NAV_ITEMS: Array<{
   },
   {
     id: "master_report",
-    label: "Masters",
+    label: "Party Head",
     icon: Users,
     ocid: "nav.master_report_tab",
   },
