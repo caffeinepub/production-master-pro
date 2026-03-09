@@ -6,7 +6,6 @@ import Text "mo:core/Text";
 import Order "mo:core/Order";
 import Iter "mo:core/Iter";
 
-import List "mo:core/List";
 
 
 actor {
@@ -38,6 +37,7 @@ actor {
     articleNo : Text;
     tailorName : Text;
     color : Text;
+    size : Text;
     quantity : Float;
     pcsRate : Float;
     finalAmount : Float;
@@ -57,9 +57,9 @@ actor {
     date : Text;
     articleNo : Text;
     employeeName : Text;
+    size : Text;
     quantity : Float;
     pcsRate : Float;
-    rate : Float;
     finalAmount : Float;
   };
 
@@ -186,6 +186,7 @@ actor {
     articleNo : Text,
     tailorName : Text,
     color : Text,
+    size : Text,
     quantity : Float,
     pcsRate : Float,
     finalAmount : Float,
@@ -199,6 +200,7 @@ actor {
       articleNo;
       tailorName;
       color;
+      size;
       quantity;
       pcsRate;
       finalAmount;
@@ -252,9 +254,9 @@ actor {
     date : Text,
     articleNo : Text,
     employeeName : Text,
+    size : Text,
     quantity : Float,
     pcsRate : Float,
-    rate : Float,
     finalAmount : Float,
   ) : async Nat {
     let id = nextId;
@@ -265,9 +267,9 @@ actor {
       date;
       articleNo;
       employeeName;
+      size;
       quantity;
       pcsRate;
-      rate;
       finalAmount;
     };
 

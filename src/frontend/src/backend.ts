@@ -95,7 +95,7 @@ export interface OverlockRecord {
     employeeName: string;
     pcsRate: number;
     date: string;
-    rate: number;
+    size: string;
     articleNo: string;
     quantity: number;
 }
@@ -118,13 +118,14 @@ export interface TailorRecord {
     date: string;
     tailorName: string;
     color: string;
+    size: string;
     articleNo: string;
     quantity: number;
 }
 export interface backendInterface {
-    addOverlockRecord(date: string, articleNo: string, employeeName: string, quantity: number, pcsRate: number, rate: number, finalAmount: number): Promise<bigint>;
+    addOverlockRecord(date: string, articleNo: string, employeeName: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
     addRecord(date: string, articleNo: string, masterName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<bigint>;
-    addTailorRecord(date: string, articleNo: string, tailorName: string, color: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
+    addTailorRecord(date: string, articleNo: string, tailorName: string, color: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
     deleteOverlockRecord(id: bigint): Promise<boolean>;
     deleteRecord(id: bigint): Promise<boolean>;
     deleteTailorRecord(id: bigint): Promise<boolean>;
@@ -139,7 +140,7 @@ export interface backendInterface {
 }
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
-    async addOverlockRecord(arg0: string, arg1: string, arg2: string, arg3: number, arg4: number, arg5: number, arg6: number): Promise<bigint> {
+    async addOverlockRecord(arg0: string, arg1: string, arg2: string, arg3: string, arg4: number, arg5: number, arg6: number): Promise<bigint> {
         if (this.processError) {
             try {
                 const result = await this.actor.addOverlockRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
@@ -167,17 +168,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async addTailorRecord(arg0: string, arg1: string, arg2: string, arg3: string, arg4: number, arg5: number, arg6: number): Promise<bigint> {
+    async addTailorRecord(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: number, arg6: number, arg7: number): Promise<bigint> {
         if (this.processError) {
             try {
-                const result = await this.actor.addTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+                const result = await this.actor.addTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.addTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+            const result = await this.actor.addTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
             return result;
         }
     }

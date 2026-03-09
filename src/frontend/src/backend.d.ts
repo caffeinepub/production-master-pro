@@ -13,7 +13,7 @@ export interface OverlockRecord {
     employeeName: string;
     pcsRate: number;
     date: string;
-    rate: number;
+    size: string;
     articleNo: string;
     quantity: number;
 }
@@ -36,13 +36,14 @@ export interface TailorRecord {
     date: string;
     tailorName: string;
     color: string;
+    size: string;
     articleNo: string;
     quantity: number;
 }
 export interface backendInterface {
-    addOverlockRecord(date: string, articleNo: string, employeeName: string, quantity: number, pcsRate: number, rate: number, finalAmount: number): Promise<bigint>;
+    addOverlockRecord(date: string, articleNo: string, employeeName: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
     addRecord(date: string, articleNo: string, masterName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<bigint>;
-    addTailorRecord(date: string, articleNo: string, tailorName: string, color: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
+    addTailorRecord(date: string, articleNo: string, tailorName: string, color: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
     deleteOverlockRecord(id: bigint): Promise<boolean>;
     deleteRecord(id: bigint): Promise<boolean>;
     deleteTailorRecord(id: bigint): Promise<boolean>;

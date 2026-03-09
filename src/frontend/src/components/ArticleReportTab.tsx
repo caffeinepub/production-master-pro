@@ -26,20 +26,45 @@ export function ArticleReportTab() {
       {/* Summary */}
       {!isLoading && articleReport.length > 0 && (
         <div
+          data-ocid="article_report.total_card"
           className="rounded-lg p-4"
           style={{
-            background: "oklch(var(--accent) / 0.15)",
-            border: "1.5px solid oklch(var(--accent) / 0.4)",
+            background: "oklch(var(--primary) / 0.08)",
+            border: "1.5px solid oklch(var(--primary) / 0.3)",
           }}
         >
-          <div className="data-label mb-1">
-            Total Production Across All Articles
-          </div>
-          <div
-            className="data-value"
-            style={{ color: "oklch(var(--accent-foreground))" }}
-          >
-            {totalPcs.toLocaleString()} pcs
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div
+                className="text-xs font-semibold uppercase tracking-wide mb-1"
+                style={{ color: "oklch(var(--primary))" }}
+              >
+                Total Production
+              </div>
+              <div
+                className="font-heading font-bold text-2xl leading-none"
+                style={{ color: "oklch(var(--foreground))" }}
+              >
+                {totalPcs.toLocaleString()}
+                <span
+                  className="text-sm font-normal ml-1"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  pcs
+                </span>
+              </div>
+              <div
+                className="text-xs mt-1"
+                style={{ color: "oklch(var(--muted-foreground))" }}
+              >
+                Across all {articleReport.length} article
+                {articleReport.length !== 1 ? "s" : ""}
+              </div>
+            </div>
+            <Package
+              className="w-10 h-10 shrink-0"
+              style={{ color: "oklch(var(--primary) / 0.4)" }}
+            />
           </div>
         </div>
       )}

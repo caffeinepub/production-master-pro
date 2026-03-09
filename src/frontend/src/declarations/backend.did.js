@@ -14,7 +14,7 @@ export const OverlockRecord = IDL.Record({
   'employeeName' : IDL.Text,
   'pcsRate' : IDL.Float64,
   'date' : IDL.Text,
-  'rate' : IDL.Float64,
+  'size' : IDL.Text,
   'articleNo' : IDL.Text,
   'quantity' : IDL.Float64,
 });
@@ -37,6 +37,7 @@ export const TailorRecord = IDL.Record({
   'date' : IDL.Text,
   'tailorName' : IDL.Text,
   'color' : IDL.Text,
+  'size' : IDL.Text,
   'articleNo' : IDL.Text,
   'quantity' : IDL.Float64,
 });
@@ -47,7 +48,7 @@ export const idlService = IDL.Service({
         IDL.Text,
         IDL.Text,
         IDL.Text,
-        IDL.Float64,
+        IDL.Text,
         IDL.Float64,
         IDL.Float64,
         IDL.Float64,
@@ -72,6 +73,7 @@ export const idlService = IDL.Service({
     ),
   'addTailorRecord' : IDL.Func(
       [
+        IDL.Text,
         IDL.Text,
         IDL.Text,
         IDL.Text,
@@ -121,7 +123,7 @@ export const idlFactory = ({ IDL }) => {
     'employeeName' : IDL.Text,
     'pcsRate' : IDL.Float64,
     'date' : IDL.Text,
-    'rate' : IDL.Float64,
+    'size' : IDL.Text,
     'articleNo' : IDL.Text,
     'quantity' : IDL.Float64,
   });
@@ -144,6 +146,7 @@ export const idlFactory = ({ IDL }) => {
     'date' : IDL.Text,
     'tailorName' : IDL.Text,
     'color' : IDL.Text,
+    'size' : IDL.Text,
     'articleNo' : IDL.Text,
     'quantity' : IDL.Float64,
   });
@@ -154,7 +157,7 @@ export const idlFactory = ({ IDL }) => {
           IDL.Text,
           IDL.Text,
           IDL.Text,
-          IDL.Float64,
+          IDL.Text,
           IDL.Float64,
           IDL.Float64,
           IDL.Float64,
@@ -179,6 +182,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'addTailorRecord' : IDL.Func(
         [
+          IDL.Text,
           IDL.Text,
           IDL.Text,
           IDL.Text,

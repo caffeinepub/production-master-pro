@@ -70,16 +70,17 @@ export function useAddRecord() {
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
+      // Explicitly convert to float to ensure correct candid float64 serialization
       return actor.addRecord(
         params.date,
         params.articleNo,
         params.masterName,
-        params.dispatchedPcs,
-        params.cutByMaster,
-        params.rate,
-        params.percentage,
-        params.totalPcs,
-        params.finalAmount,
+        Number.parseFloat(String(params.dispatchedPcs)),
+        Number.parseFloat(String(params.cutByMaster)),
+        Number.parseFloat(String(params.rate)),
+        Number.parseFloat(String(params.percentage)),
+        Number.parseFloat(String(params.totalPcs)),
+        Number.parseFloat(String(params.finalAmount)),
       );
     },
     onSuccess: () => {
@@ -148,18 +149,15 @@ export function useAddTailorRecord() {
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
-      // Encode size into color field using "||" separator since backend has no size field
-      const colorWithSize = params.size
-        ? `${params.color}||${params.size}`
-        : params.color;
       return actor.addTailorRecord(
         params.date,
         params.articleNo,
         params.tailorName,
-        colorWithSize,
-        params.quantity,
-        params.pcsRate,
-        params.finalAmount,
+        params.color,
+        params.size,
+        Number.parseFloat(String(params.quantity)),
+        Number.parseFloat(String(params.pcsRate)),
+        Number.parseFloat(String(params.finalAmount)),
       );
     },
     onSuccess: () => {
@@ -224,18 +222,14 @@ export function useAddOverlockRecord() {
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
-      // Encode size into employeeName field using "||" separator since backend has no size field
-      const nameWithSize = params.size
-        ? `${params.employeeName}||${params.size}`
-        : params.employeeName;
       return actor.addOverlockRecord(
         params.date,
         params.articleNo,
-        nameWithSize,
-        params.quantity,
-        params.pcsRate,
-        0,
-        params.finalAmount,
+        params.employeeName,
+        params.size,
+        Number.parseFloat(String(params.quantity)),
+        Number.parseFloat(String(params.pcsRate)),
+        Number.parseFloat(String(params.finalAmount)),
       );
     },
     onSuccess: () => {

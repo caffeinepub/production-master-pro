@@ -16,7 +16,7 @@ export interface OverlockRecord {
   'employeeName' : string,
   'pcsRate' : number,
   'date' : string,
-  'rate' : number,
+  'size' : string,
   'articleNo' : string,
   'quantity' : number,
 }
@@ -39,12 +39,13 @@ export interface TailorRecord {
   'date' : string,
   'tailorName' : string,
   'color' : string,
+  'size' : string,
   'articleNo' : string,
   'quantity' : number,
 }
 export interface _SERVICE {
   'addOverlockRecord' : ActorMethod<
-    [string, string, string, number, number, number, number],
+    [string, string, string, string, number, number, number],
     bigint
   >,
   'addRecord' : ActorMethod<
@@ -52,7 +53,7 @@ export interface _SERVICE {
     bigint
   >,
   'addTailorRecord' : ActorMethod<
-    [string, string, string, string, number, number, number],
+    [string, string, string, string, string, number, number, number],
     bigint
   >,
   'deleteOverlockRecord' : ActorMethod<[bigint], boolean>,
