@@ -1,27 +1,28 @@
 # Production Master Pro
 
 ## Current State
-The backend uses `let itemMasters = Map.empty<Nat, ItemMaster>()` (and same pattern for all other record types). These are heap-allocated maps with no stable storage. Every canister upgrade wipes all data. This causes "Failed to save item" and "Failed to load data" errors because after each deployment the canister starts fresh.
+The app uses a username/password login (default A/a) stored in localStorage. The AppHeader has a settings dialog to change credentials. All data is stored globally in Motoko stable storage (not per-user). `@dfinity/auth-client` ~3.3.0 is already in package.json.
 
 ## Requested Changes (Diff)
 
 ### Add
-- `stable var` backing arrays for all entity types (ItemMaster, TailorRecord, DispatchRecord, AdditionalWorkRecord, ProductionRecord, OverlockRecord)
-- `stable var nextId` so IDs survive upgrades
-- `system func preupgrade()` to snapshot all maps to stable arrays
-- `system func postupgrade()` to restore all maps from stable arrays
+- Internet Identity login screen replacing the username/password screen
+- `useAuth` hook managing AuthClient state (login, logout, identity, principal)
+- Profile indicator in AppHeader top-right showing the user is logged in (icon + short principal text or "II User")
+- Logout button in the settings dialog in AppHeader
 
 ### Modify
-- All entity storage maps changed from `let` (heap) to `var` (mutable, restored from stable arrays on upgrade)
-- `nextId` changed from `var` (heap, resets to 0) to `stable var`
+- `LoginScreen.tsx`: Replace username/password form with a single "Login with Internet Identity" button using `@dfinity/auth-client`. On click, call `authClient.login()` with identityProvider. On success call `onLogin()`.
+- `App.tsx`: Integrate AuthClient. On mount, check `authClient.isAuthenticated()`. Pass logout handler down to AppHeader.
+- `AppHeader.tsx`: Accept `onLogout` prop. Show user icon + "II User" label in top-right. In settings dialog, replace credentials content with a Logout button.
 
 ### Remove
-- Nothing removed
+- Username/password fields and credential-change logic from LoginScreen and AppHeader
+- localStorage credential storage
 
 ## Implementation Plan
-1. Declare `stable var` arrays for each record type as backup storage
-2. Change `var nextId = 0` to `stable var nextId = 0`
-3. Change all `let mapName = Map.empty()` to `var mapName = Map.empty()` (mutable binding)
-4. Add `preupgrade` system function that writes all map entries to stable arrays
-5. Add `postupgrade` system function that reconstructs all maps from stable arrays
-6. All other logic (CRUD, queries, validation) remains unchanged
+1. Create `src/frontend/src/hooks/useAuth.ts` - wraps AuthClient, exposes `{ isAuthenticated, principal, login, logout, loading }`
+2. Update `LoginScreen.tsx` - replace form with II login button
+3. Update `AppHeader.tsx` - add `onLogout` prop, show user indicator, add logout in settings
+4. Update `App.tsx` - use useAuth hook, pass handlers, keep splash screen flow
+5. Validate and fix any TypeScript errors

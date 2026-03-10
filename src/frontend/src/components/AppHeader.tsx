@@ -6,9 +6,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Factory, Settings } from "lucide-react";
+import { Factory, LogOut, Settings, UserCheck } from "lucide-react";
 import { useState } from "react";
 import type { TabId } from "../App";
 
@@ -24,35 +22,11 @@ const TAB_TITLES: Record<TabId, string> = {
 
 interface AppHeaderProps {
   activeTab: TabId;
+  onLogout?: () => void;
 }
 
-export function AppHeader({ activeTab }: AppHeaderProps) {
+export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
   const [open, setOpen] = useState(false);
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [saved, setSaved] = useState(false);
-
-  function handleSave() {
-    if (!newUsername.trim() || !newPassword.trim()) return;
-    localStorage.setItem("app_username", newUsername.trim());
-    localStorage.setItem("app_password", newPassword.trim());
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-      setNewUsername("");
-      setNewPassword("");
-      setOpen(false);
-    }, 1500);
-  }
-
-  function handleOpenChange(val: boolean) {
-    setOpen(val);
-    if (!val) {
-      setSaved(false);
-      setNewUsername("");
-      setNewPassword("");
-    }
-  }
 
   return (
     <header
@@ -90,8 +64,8 @@ export function AppHeader({ activeTab }: AppHeaderProps) {
           </span>
         </div>
 
-        {/* Settings Dialog */}
-        <Dialog open={open} onOpenChange={handleOpenChange}>
+        {/* Settings / Profile Dialog */}
+        <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <button
               type="button"
@@ -107,54 +81,51 @@ export function AppHeader({ activeTab }: AppHeaderProps) {
             className="w-[90vw] max-w-sm rounded-xl"
           >
             <DialogHeader>
-              <DialogTitle>Change Login Credentials</DialogTitle>
+              <DialogTitle>Account &amp; Settings</DialogTitle>
             </DialogHeader>
             <div className="flex flex-col gap-4 mt-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="new-username">New Username</Label>
-                <Input
-                  id="new-username"
-                  data-ocid="settings.input"
-                  type="text"
-                  placeholder="Enter new username"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="new-password">New Password</Label>
-                <Input
-                  id="new-password"
-                  data-ocid="settings.password_input"
-                  type="password"
-                  placeholder="Enter new password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
-              </div>
-
-              {saved && (
-                <div
-                  data-ocid="settings.success_state"
-                  className="rounded-lg px-3 py-2 text-sm text-center"
-                  style={{
-                    background: "oklch(0.87 0.12 145 / 0.2)",
-                    color: "oklch(0.45 0.15 145)",
-                    border: "1px solid oklch(0.7 0.15 145 / 0.4)",
-                  }}
-                >
-                  ✓ Credentials updated successfully
-                </div>
-              )}
-
-              <Button
-                data-ocid="settings.save_button"
-                onClick={handleSave}
-                disabled={!newUsername.trim() || !newPassword.trim()}
-                className="w-full"
-                style={{ background: "oklch(var(--primary))" }}
+              {/* Logged-in indicator */}
+              <div
+                className="flex items-center gap-3 rounded-lg px-4 py-3"
+                style={{
+                  background: "oklch(var(--primary) / 0.08)",
+                  border: "1px solid oklch(var(--primary) / 0.2)",
+                }}
               >
-                Save Changes
+                <div
+                  className="flex items-center justify-center w-9 h-9 rounded-full shrink-0"
+                  style={{ background: "oklch(var(--primary))" }}
+                >
+                  <UserCheck className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span
+                    className="font-semibold text-sm"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    Logged In
+                  </span>
+                  <span
+                    className="text-xs truncate"
+                    style={{ color: "oklch(var(--muted-foreground))" }}
+                  >
+                    Internet Identity authenticated
+                  </span>
+                </div>
+              </div>
+
+              {/* Logout button */}
+              <Button
+                data-ocid="settings.delete_button"
+                variant="destructive"
+                className="w-full gap-2"
+                onClick={() => {
+                  setOpen(false);
+                  onLogout?.();
+                }}
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
               </Button>
             </div>
           </DialogContent>

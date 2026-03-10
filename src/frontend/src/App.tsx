@@ -11,6 +11,7 @@ import { MasterReportTab } from "./components/MasterReportTab";
 import { PaymentTab } from "./components/PaymentTab";
 import { SplashScreen } from "./components/SplashScreen";
 import { TailorTab } from "./components/TailorTab";
+import { useAuth } from "./hooks/useAuth";
 
 export type TabId =
   | "history"
@@ -27,8 +28,8 @@ const FOOTER_HREF = `https://caffeine.ai?utm_source=caffeine-footer&utm_medium=r
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("item_master");
+  const { isAuthenticated, loading, login, logout } = useAuth();
 
   if (showSplash) {
     return (
@@ -39,10 +40,31 @@ export default function App() {
     );
   }
 
-  if (!isLoggedIn) {
+  if (loading) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center gap-3"
+        style={{ background: "oklch(var(--background))" }}
+      >
+        <div
+          className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+          style={{ borderColor: "oklch(var(--primary))" }}
+        />
+        <p
+          className="text-sm"
+          style={{ color: "oklch(var(--muted-foreground))" }}
+        >
+          Initializing...
+        </p>
+        <Toaster position="top-center" richColors />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
     return (
       <>
-        <LoginScreen onLogin={() => setIsLoggedIn(true)} />
+        <LoginScreen onLogin={login} />
         <Toaster position="top-center" richColors />
       </>
     );
@@ -50,7 +72,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppHeader activeTab={activeTab} />
+      <AppHeader activeTab={activeTab} onLogout={logout} />
 
       <main className="tab-content-area">
         {activeTab === "history" && <HistoryTab />}
