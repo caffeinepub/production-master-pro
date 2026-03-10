@@ -1,44 +1,27 @@
 # Production Master Pro
 
 ## Current State
-- App has tabs: Entry, History, Master Report, Article Report, Payment, Tailor, Overlock
-- Backend: ProductionRecords, TailorRecords, OverlockRecords
-- TailorTab validates against total cutting quantity from ProductionRecords
-- EntryTab has a "Calculation Result" section at top
-- Fields use "Cut by Master PCS" label
+The backend uses `let itemMasters = Map.empty<Nat, ItemMaster>()` (and same pattern for all other record types). These are heap-allocated maps with no stable storage. Every canister upgrade wipes all data. This causes "Failed to save item" and "Failed to load data" errors because after each deployment the canister starts fresh.
 
 ## Requested Changes (Diff)
 
 ### Add
-- New **Item Master** tab (replaces Article Report tab position/name) for creating articles before any tailor entry
-  - Fields: Article Number, Total Quantity, Size-wise Ratio (S/M/L/XL/XXL quantities)
-  - Validation: sum of size quantities must equal Total Quantity
-  - History with Edit/Delete
-- New **Dispatch** tab
-  - Fields: Article Number (dropdown from Item Master), Remaining Quantity (auto), Dispatch Quantity, Sale Price, Percentage
-  - Formula: Final Payment = Dispatch Quantity × Sale Price × Percentage / 100
-  - Validation: Dispatch Quantity must not exceed Remaining Quantity
-  - History with Edit/Delete
-- Backend: ItemMaster and DispatchRecord data types and CRUD functions
-- Backend: size-wise quantity tracking per article (deducted by tailor entries by size)
+- `stable var` backing arrays for all entity types (ItemMaster, TailorRecord, DispatchRecord, AdditionalWorkRecord, ProductionRecord, OverlockRecord)
+- `stable var nextId` so IDs survive upgrades
+- `system func preupgrade()` to snapshot all maps to stable arrays
+- `system func postupgrade()` to restore all maps from stable arrays
 
 ### Modify
-- Rename "Article Report" tab to "Item Master"
-- Remove "Calculation Result" display from top section of Entry tab
-- Rename field label "Cut by Master PCS" to "Total Quantity" in Entry/related tabs
-- TailorTab: validate entries against Item Master size-wise quantities (not production records), block if article not in Item Master
-- BottomNav and App.tsx: add Item Master and Dispatch tabs, remove old Article Report tab
+- All entity storage maps changed from `let` (heap) to `var` (mutable, restored from stable arrays on upgrade)
+- `nextId` changed from `var` (heap, resets to 0) to `stable var`
 
 ### Remove
-- "Calculation Result" section from EntryTab header/top area
-- ArticleReportTab (replaced by ItemMasterTab)
+- Nothing removed
 
 ## Implementation Plan
-1. Update backend (main.mo) to add ItemMaster and DispatchRecord types, CRUD, and size-wise remaining quantity queries
-2. Update App.tsx tabs list (add item_master and dispatch, remove article_report)
-3. Update BottomNav with new tabs
-4. Create ItemMasterTab component
-5. Create DispatchTab component
-6. Update TailorTab to validate against ItemMaster size quantities
-7. Update EntryTab to remove Calculation Result section and rename field labels
-8. Remove ArticleReportTab usage
+1. Declare `stable var` arrays for each record type as backup storage
+2. Change `var nextId = 0` to `stable var nextId = 0`
+3. Change all `let mapName = Map.empty()` to `var mapName = Map.empty()` (mutable binding)
+4. Add `preupgrade` system function that writes all map entries to stable arrays
+5. Add `postupgrade` system function that reconstructs all maps from stable arrays
+6. All other logic (CRUD, queries, validation) remains unchanged

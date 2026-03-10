@@ -22,9 +22,26 @@ const DEFAULT_WORK_TYPES = [
 // Work types that support All Colors / All Sizes
 const NON_ELIGIBLE_WORK_TYPES = ["Overlock", "Folding"];
 
+const TRACKED_WORK_TYPES = ["Packing", "Press", "Kaj", "Thread Cutting"];
+
 function isEligibleForAllColors(workType: string): boolean {
   if (!workType) return false;
   return !NON_ELIGIBLE_WORK_TYPES.includes(workType);
+}
+
+/**
+ * Returns the color/size mode for a given work type:
+ * - "optional_both": color and size are both optional (Packing, Press, Kaj, custom)
+ * - "optional_size": color is required, size is optional (Thread Cutting)
+ * - "required_both": both color and size are required (Overlock, Folding)
+ */
+function getColorSizeMode(
+  workType: string,
+): "optional_both" | "optional_size" | "required_both" {
+  if (!workType) return "required_both";
+  if (["Overlock", "Folding"].includes(workType)) return "required_both";
+  if (workType === "Thread Cutting") return "optional_size";
+  return "optional_both"; // Packing, Press, Kaj, and all custom types
 }
 
 const CUSTOM_WORK_TYPES_KEY = "customWorkTypes_v1";
@@ -225,6 +242,7 @@ export function AdditionalWorkTab() {
   }, [selectedArticleColorEntries, form.color, form.size]);
 
   const eligible = isEligibleForAllColors(form.workType);
+  const colorSizeMode = getColorSizeMode(form.workType);
 
   const uniqueEmployees = useMemo(() => {
     const names = new Set<string>();
@@ -233,6 +251,24 @@ export function AdditionalWorkTab() {
     }
     return Array.from(names).sort();
   }, [records]);
+
+  // Processed quantity by work type for the selected article
+  const processedByWorkType = useMemo(() => {
+    if (!form.articleNo) return {} as Record<string, number>;
+    const map: Record<string, number> = {};
+    for (const r of records) {
+      if (r.articleNo === form.articleNo) {
+        map[r.workType] = (map[r.workType] || 0) + r.pcsDone;
+      }
+    }
+    return map;
+  }, [records, form.articleNo]);
+
+  // Selected article info
+  const selectedArticle = useMemo(
+    () => items.find((i) => i.articleNo === form.articleNo),
+    [items, form.articleNo],
+  );
 
   // Monthly summary - grouped by articleNo + color + size + workType
   const monthlySummary = useMemo(() => {
@@ -288,12 +324,22 @@ export function AdditionalWorkTab() {
       })
     : "";
 
-  // Build list of color+size combos to save for (handles All Colors / All Sizes)
-  const resolveColorSizeCombos = (): Array<{ color: string; size: string }> => {
+  /**
+   * Build list of color+size combos to save for.
+   * Accepts optional overrides so handleSave can pass resolved ALL_COLORS/ALL_SIZES
+   * even when the form fields are blank (optional mode).
+   */
+  const resolveColorSizeCombos = (
+    colorOverride?: string,
+    sizeOverride?: string,
+  ): Array<{ color: string; size: string }> => {
     const pcs = Number.parseFloat(form.pcsDone) || 0;
     if (!pcs) return [];
 
-    if (form.color === ALL_COLORS_VALUE && form.size === ALL_SIZES_VALUE) {
+    const colorVal = colorOverride ?? form.color;
+    const sizeVal = sizeOverride ?? form.size;
+
+    if (colorVal === ALL_COLORS_VALUE && sizeVal === ALL_SIZES_VALUE) {
       // All colors, all sizes
       const combos: Array<{ color: string; size: string }> = [];
       for (const ce of selectedArticleColorEntries) {
@@ -304,30 +350,28 @@ export function AdditionalWorkTab() {
       return combos;
     }
 
-    if (form.color === ALL_COLORS_VALUE && form.size !== ALL_SIZES_VALUE) {
+    if (colorVal === ALL_COLORS_VALUE && sizeVal !== ALL_SIZES_VALUE) {
       // All colors, specific size
       const combos: Array<{ color: string; size: string }> = [];
       for (const ce of selectedArticleColorEntries) {
-        if ((ce.sizes[form.size] || 0) > 0) {
-          combos.push({ color: ce.color, size: form.size });
+        if ((ce.sizes[sizeVal] || 0) > 0) {
+          combos.push({ color: ce.color, size: sizeVal });
         }
       }
       return combos;
     }
 
-    if (form.color !== ALL_COLORS_VALUE && form.size === ALL_SIZES_VALUE) {
+    if (colorVal !== ALL_COLORS_VALUE && sizeVal === ALL_SIZES_VALUE) {
       // Specific color, all sizes
-      const ce = selectedArticleColorEntries.find(
-        (c) => c.color === form.color,
-      );
+      const ce = selectedArticleColorEntries.find((c) => c.color === colorVal);
       if (!ce) return [];
       return Object.entries(ce.sizes)
         .filter(([, qty]) => qty > 0)
-        .map(([size]) => ({ color: form.color, size }));
+        .map(([size]) => ({ color: colorVal, size }));
     }
 
     // Specific color + size
-    return [{ color: form.color, size: form.size }];
+    return [{ color: colorVal, size: sizeVal }];
   };
 
   const handleSave = async () => {
@@ -337,14 +381,6 @@ export function AdditionalWorkTab() {
     }
     if (!form.articleNo.trim()) {
       toast.error("Article Number required");
-      return;
-    }
-    if (!form.color) {
-      toast.error("Color is required");
-      return;
-    }
-    if (!form.size) {
-      toast.error("Size is required");
       return;
     }
     if (!form.workType.trim()) {
@@ -361,14 +397,47 @@ export function AdditionalWorkTab() {
       return;
     }
 
-    const combos = resolveColorSizeCombos();
+    // Resolve effective color/size based on mode
+    let effectiveColor = form.color;
+    let effectiveSize = form.size;
+
+    if (colorSizeMode === "required_both") {
+      // Both are required
+      if (!form.color) {
+        toast.error("Color is required");
+        return;
+      }
+      if (!form.size) {
+        toast.error("Size is required");
+        return;
+      }
+    } else if (colorSizeMode === "optional_size") {
+      // Thread Cutting: color required, size optional
+      if (!form.color) {
+        toast.error("Color is required for Thread Cutting");
+        return;
+      }
+      if (!form.size) {
+        effectiveSize = ALL_SIZES_VALUE;
+      }
+    } else {
+      // optional_both: Packing, Press, Kaj, custom – both optional
+      if (!form.color) {
+        effectiveColor = ALL_COLORS_VALUE;
+      }
+      if (!form.size) {
+        effectiveSize = ALL_SIZES_VALUE;
+      }
+    }
+
+    const combos = resolveColorSizeCombos(effectiveColor, effectiveSize);
     if (combos.length === 0) {
       toast.error("No valid color/size combinations found.");
       return;
     }
 
     const isAllMode =
-      form.color === ALL_COLORS_VALUE || form.size === ALL_SIZES_VALUE;
+      effectiveColor === ALL_COLORS_VALUE || effectiveSize === ALL_SIZES_VALUE;
     const rate = Number.parseFloat(form.ratePerPcs) || 0;
 
     setLoading(true);
@@ -596,6 +665,29 @@ export function AdditionalWorkTab() {
       filterArticle ? `Article: ${filterArticle}` : "All Articles",
     );
   };
+
+  // Compute combos for preview using effective color/size (respecting optional mode)
+  const previewEffectiveColor =
+    colorSizeMode === "optional_both" && !form.color
+      ? ALL_COLORS_VALUE
+      : form.color;
+  const previewEffectiveSize =
+    (colorSizeMode === "optional_both" || colorSizeMode === "optional_size") &&
+    !form.size
+      ? ALL_SIZES_VALUE
+      : form.size;
+
+  const previewCombos = resolveColorSizeCombos(
+    previewEffectiveColor,
+    previewEffectiveSize,
+  );
+
+  // Remaining qty for selected article + work type
+  const totalProductionQty = selectedArticle?.totalQuantity || 0;
+  const processedQty = form.workType
+    ? processedByWorkType[form.workType] || 0
+    : 0;
+  const remainingQty = totalProductionQty - processedQty;
 
   return (
     <div className="p-4 pb-24 space-y-4">
@@ -894,6 +986,78 @@ export function AdditionalWorkTab() {
             </select>
           </div>
 
+          {/* Article Processing Summary – shown when article is selected */}
+          {form.articleNo && selectedArticle && (
+            <div
+              className="rounded-xl border overflow-hidden"
+              style={{ borderColor: "oklch(var(--primary) / 0.3)" }}
+            >
+              <div
+                className="px-3 py-2"
+                style={{ background: "oklch(var(--primary) / 0.08)" }}
+              >
+                <p
+                  className="font-bold text-sm"
+                  style={{ color: "oklch(var(--primary))" }}
+                >
+                  📊 Article Processing Summary
+                </p>
+                <p
+                  className="text-xs mt-0.5"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  Total Production:{" "}
+                  <span
+                    className="font-semibold"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    {totalProductionQty} pcs
+                  </span>
+                </p>
+              </div>
+              <div
+                className="divide-y"
+                style={{ borderColor: "oklch(var(--border))" }}
+              >
+                {TRACKED_WORK_TYPES.map((wt) => {
+                  const done = processedByWorkType[wt] || 0;
+                  const rem = totalProductionQty - done;
+                  return (
+                    <div
+                      key={wt}
+                      className="grid px-3 py-2 text-xs"
+                      style={{ gridTemplateColumns: "1fr 60px 70px" }}
+                    >
+                      <span
+                        className="font-medium"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        {wt}
+                      </span>
+                      <span
+                        className="text-center"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        Done: {done}
+                      </span>
+                      <span
+                        className="text-right font-semibold"
+                        style={{
+                          color:
+                            rem <= 0
+                              ? "oklch(var(--destructive))"
+                              : "oklch(var(--success))",
+                        }}
+                      >
+                        Rem: {rem}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Work Type */}
           <div>
             <Label>Work Type *</Label>
@@ -953,30 +1117,55 @@ export function AdditionalWorkTab() {
               </Button>
             </div>
 
-            {/* Eligibility indicator */}
+            {/* Mode indicator */}
             {form.workType && (
               <p
                 className="text-xs mt-1.5 px-2 py-1 rounded-md inline-block"
                 style={{
-                  background: eligible
-                    ? "oklch(var(--primary) / 0.1)"
-                    : "oklch(var(--muted))",
-                  color: eligible
-                    ? "oklch(var(--primary))"
-                    : "oklch(var(--muted-foreground))",
+                  background:
+                    colorSizeMode === "required_both"
+                      ? "oklch(var(--muted))"
+                      : "oklch(var(--primary) / 0.1)",
+                  color:
+                    colorSizeMode === "required_both"
+                      ? "oklch(var(--muted-foreground))"
+                      : "oklch(var(--primary))",
                 }}
               >
-                {eligible
-                  ? "All Colors & All Sizes options available for this work type"
-                  : "Specific color & size required for this work type"}
+                {colorSizeMode === "required_both" &&
+                  "Specific color & size required"}
+                {colorSizeMode === "optional_size" &&
+                  "Color required · Size optional (blank = All Sizes)"}
+                {colorSizeMode === "optional_both" &&
+                  "Color & Size optional (blank = All Colors & All Sizes)"}
               </p>
             )}
           </div>
 
-          {/* Color - auto-fetched from Item Master */}
+          {/* ── COLOR FIELD ── */}
           {form.articleNo && form.workType && (
             <div>
-              <Label>Color *</Label>
+              {/* Optional hint for optional_both mode */}
+              {colorSizeMode === "optional_both" && !form.color && (
+                <p
+                  className="text-xs mb-1.5 px-2 py-1 rounded-md"
+                  style={{
+                    background: "oklch(var(--primary) / 0.08)",
+                    color: "oklch(var(--primary))",
+                  }}
+                >
+                  Leave blank to apply to All Colors &amp; All Sizes
+                </p>
+              )}
+
+              <Label>
+                {colorSizeMode === "required_both"
+                  ? "Color *"
+                  : colorSizeMode === "optional_size"
+                    ? "Color *"
+                    : "Color (Optional)"}
+              </Label>
+
               {availableColors.length > 0 ? (
                 <select
                   data-ocid="add_work.color_select"
@@ -986,7 +1175,11 @@ export function AdditionalWorkTab() {
                     setForm((f) => ({ ...f, color: e.target.value, size: "" }))
                   }
                 >
-                  <option value="">Select color...</option>
+                  <option value="">
+                    {colorSizeMode === "optional_both"
+                      ? "All Colors (leave blank)"
+                      : "Select color..."}
+                  </option>
                   {eligible && (
                     <option value={ALL_COLORS_VALUE}>🎨 All Colors</option>
                   )}
@@ -1012,81 +1205,122 @@ export function AdditionalWorkTab() {
                   Entry will be applied to all {availableColors.length} color(s)
                 </p>
               )}
-            </div>
-          )}
 
-          {/* Size - auto-fetched based on selected color */}
-          {form.articleNo && form.workType && form.color && (
-            <div>
-              <Label>Size *</Label>
-              {availableSizes.length > 0 ? (
-                <select
-                  data-ocid="add_work.size_select"
-                  className="input-factory w-full"
-                  value={form.size}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, size: e.target.value }))
-                  }
+              {/* "All Colors – All Sizes" info box shown when color is blank in optional_both mode */}
+              {colorSizeMode === "optional_both" && !form.color && (
+                <div
+                  className="mt-2 rounded-lg px-3 py-2 text-sm font-medium"
+                  style={{
+                    background: "oklch(var(--primary) / 0.12)",
+                    color: "oklch(var(--primary))",
+                    border: "1px solid oklch(var(--primary) / 0.3)",
+                  }}
                 >
-                  <option value="">Select size...</option>
-                  {eligible && (
-                    <option value={ALL_SIZES_VALUE}>📐 All Sizes</option>
-                  )}
-                  {availableSizes.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p
-                  className="text-xs mt-1"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  No sizes defined for this color.
-                </p>
-              )}
-              {form.size === ALL_SIZES_VALUE && (
-                <p
-                  className="text-xs mt-1"
-                  style={{ color: "oklch(var(--primary))" }}
-                >
-                  Entry will be applied to all available sizes
-                </p>
+                  📋 This article – All Colors – All Sizes
+                </div>
               )}
             </div>
           )}
 
-          {/* All Colors/Sizes summary */}
+          {/* ── SIZE FIELD ── */}
+          {/* For optional_both: show size only if color is selected */}
+          {/* For optional_size (Thread Cutting): show size when color is selected */}
+          {/* For required_both: show size when color is selected */}
           {form.articleNo &&
-            form.color &&
-            form.size &&
-            (form.color === ALL_COLORS_VALUE ||
-              form.size === ALL_SIZES_VALUE) && (
-              <div
-                className="rounded-lg p-2 text-xs space-y-1"
-                style={{ background: "oklch(var(--primary) / 0.08)" }}
-              >
-                <p
-                  className="font-semibold"
-                  style={{ color: "oklch(var(--primary))" }}
-                >
-                  Will save records for:
-                </p>
-                {resolveColorSizeCombos().map(({ color, size }) => (
-                  <span
-                    key={`${color}-${size}`}
-                    className="inline-block mr-2 mb-1 px-2 py-0.5 rounded-full border"
-                    style={{
-                      borderColor: "oklch(var(--primary) / 0.4)",
-                      color: "oklch(var(--foreground))",
-                    }}
+            form.workType &&
+            (colorSizeMode === "optional_both"
+              ? form.color && form.color !== ""
+              : form.color && form.color !== "") && (
+              <div>
+                {/* Hint for optional size */}
+                {(colorSizeMode === "optional_size" ||
+                  colorSizeMode === "optional_both") &&
+                  !form.size && (
+                    <p
+                      className="text-xs mb-1.5 px-2 py-1 rounded-md"
+                      style={{
+                        background: "oklch(var(--primary) / 0.08)",
+                        color: "oklch(var(--primary))",
+                      }}
+                    >
+                      Leave blank to apply to All Sizes
+                    </p>
+                  )}
+
+                <Label>
+                  {colorSizeMode === "required_both"
+                    ? "Size *"
+                    : "Size (Optional)"}
+                </Label>
+
+                {availableSizes.length > 0 ? (
+                  <select
+                    data-ocid="add_work.size_select"
+                    className="input-factory w-full"
+                    value={form.size}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, size: e.target.value }))
+                    }
                   >
-                    {color} / {size}
-                  </span>
-                ))}
+                    <option value="">
+                      {colorSizeMode === "required_both"
+                        ? "Select size..."
+                        : "All Sizes (leave blank)"}
+                    </option>
+                    {eligible && (
+                      <option value={ALL_SIZES_VALUE}>📐 All Sizes</option>
+                    )}
+                    {availableSizes.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p
+                    className="text-xs mt-1"
+                    style={{ color: "oklch(var(--destructive))" }}
+                  >
+                    No sizes defined for this color.
+                  </p>
+                )}
+                {form.size === ALL_SIZES_VALUE && (
+                  <p
+                    className="text-xs mt-1"
+                    style={{ color: "oklch(var(--primary))" }}
+                  >
+                    Entry will be applied to all available sizes
+                  </p>
+                )}
               </div>
             )}
+
+          {/* All Colors/Sizes preview */}
+          {form.articleNo && form.workType && previewCombos.length > 1 && (
+            <div
+              className="rounded-lg p-2 text-xs space-y-1"
+              style={{ background: "oklch(var(--primary) / 0.08)" }}
+            >
+              <p
+                className="font-semibold"
+                style={{ color: "oklch(var(--primary))" }}
+              >
+                Will save records for:
+              </p>
+              {previewCombos.map(({ color, size }) => (
+                <span
+                  key={`${color}-${size}`}
+                  className="inline-block mr-2 mb-1 px-2 py-0.5 rounded-full border"
+                  style={{
+                    borderColor: "oklch(var(--primary) / 0.4)",
+                    color: "oklch(var(--foreground))",
+                  }}
+                >
+                  {color} / {size}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Cutting qty indicator (single color+size only) */}
           {form.articleNo &&
@@ -1106,6 +1340,68 @@ export function AdditionalWorkTab() {
                 </span>
               </div>
             )}
+
+          {/* ── REMAINING QUANTITY PANEL ── */}
+          {form.articleNo && form.workType && (
+            <div
+              className="rounded-xl border p-3 space-y-1.5"
+              style={{
+                background: "oklch(var(--card))",
+                borderColor: "oklch(var(--primary) / 0.25)",
+              }}
+            >
+              <p
+                className="text-xs font-bold uppercase tracking-wide"
+                style={{ color: "oklch(var(--primary))" }}
+              >
+                Quantity Tracker – {form.workType}
+              </p>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: "oklch(var(--muted-foreground))" }}>
+                  📦 Total Qty:
+                </span>
+                <span
+                  className="font-semibold"
+                  style={{ color: "oklch(var(--foreground))" }}
+                >
+                  {totalProductionQty} pcs
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: "oklch(var(--muted-foreground))" }}>
+                  ✂️ Processed in {form.workType}:
+                </span>
+                <span
+                  className="font-semibold"
+                  style={{ color: "oklch(var(--foreground))" }}
+                >
+                  {processedQty} pcs
+                </span>
+              </div>
+              <div
+                className="flex justify-between text-sm pt-1 border-t"
+                style={{ borderColor: "oklch(var(--border))" }}
+              >
+                <span
+                  className="font-semibold"
+                  style={{ color: "oklch(var(--foreground))" }}
+                >
+                  ✅ Remaining:
+                </span>
+                <span
+                  className="font-bold text-base"
+                  style={{
+                    color:
+                      remainingQty <= 0
+                        ? "oklch(var(--destructive))"
+                        : "oklch(var(--success))",
+                  }}
+                >
+                  {remainingQty} pcs
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Employee Name */}
           <div>
@@ -1162,31 +1458,37 @@ export function AdditionalWorkTab() {
               })()}
           </div>
 
-          {/* Total Amount display */}
+          {/* Total Amount display – prominent */}
           <div
-            className="rounded-lg p-3"
-            style={{ background: "oklch(var(--muted))" }}
+            className="rounded-xl p-4 border"
+            style={{
+              background: "oklch(var(--primary) / 0.08)",
+              borderColor: "oklch(var(--primary) / 0.3)",
+            }}
           >
             <p
-              className="text-sm font-semibold"
-              style={{ color: "oklch(var(--foreground))" }}
+              className="text-xs font-semibold uppercase tracking-wide mb-1"
+              style={{ color: "oklch(var(--primary))" }}
             >
-              Total Amount: ₹{totalAmount.toFixed(2)}
+              💰 Payment
             </p>
             <p
-              className="text-xs"
+              className="text-2xl font-bold"
+              style={{ color: "oklch(var(--primary))" }}
+            >
+              ₹{totalAmount.toFixed(2)}
+            </p>
+            <p
+              className="text-xs mt-1"
               style={{ color: "oklch(var(--muted-foreground))" }}
             >
               {form.pcsDone || 0} pcs × ₹{form.ratePerPcs || 0}
-              {(form.color === ALL_COLORS_VALUE ||
-                form.size === ALL_SIZES_VALUE) &&
-                resolveColorSizeCombos().length > 1 && (
-                  <span className="ml-1">
-                    (×{resolveColorSizeCombos().length} combinations = ₹
-                    {(totalAmount * resolveColorSizeCombos().length).toFixed(2)}{" "}
-                    total)
-                  </span>
-                )}
+              {previewCombos.length > 1 && (
+                <span className="ml-1">
+                  (×{previewCombos.length} combinations = ₹
+                  {(totalAmount * previewCombos.length).toFixed(2)} total)
+                </span>
+              )}
             </p>
           </div>
 

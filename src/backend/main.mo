@@ -115,14 +115,50 @@ actor {
     };
   };
 
-  // Storage
-  var nextId = 0;
-  let itemMasters = Map.empty<Nat, ItemMaster>();
-  let tailorRecords = Map.empty<Nat, TailorRecord>();
-  let dispatchRecords = Map.empty<Nat, DispatchRecord>();
-  let additionalWorkRecords = Map.empty<Nat, AdditionalWorkRecord>();
-  let productionRecords = Map.empty<Nat, ProductionRecord>();
-  let overlockRecords = Map.empty<Nat, OverlockRecord>();
+  // Stable storage (survives canister upgrades)
+  stable var nextId : Nat = 0;
+  stable var itemMastersStable : [(Nat, ItemMaster)] = [];
+  stable var tailorRecordsStable : [(Nat, TailorRecord)] = [];
+  stable var dispatchRecordsStable : [(Nat, DispatchRecord)] = [];
+  stable var additionalWorkRecordsStable : [(Nat, AdditionalWorkRecord)] = [];
+  stable var productionRecordsStable : [(Nat, ProductionRecord)] = [];
+  stable var overlockRecordsStable : [(Nat, OverlockRecord)] = [];
+
+  // Working heap maps (rebuilt from stable on upgrade)
+  var itemMasters = Map.empty<Nat, ItemMaster>();
+  var tailorRecords = Map.empty<Nat, TailorRecord>();
+  var dispatchRecords = Map.empty<Nat, DispatchRecord>();
+  var additionalWorkRecords = Map.empty<Nat, AdditionalWorkRecord>();
+  var productionRecords = Map.empty<Nat, ProductionRecord>();
+  var overlockRecords = Map.empty<Nat, OverlockRecord>();
+
+  // Restore heap maps from stable storage on startup
+  do {
+    for ((k, v) in itemMastersStable.vals()) { itemMasters.add(k, v) };
+    for ((k, v) in tailorRecordsStable.vals()) { tailorRecords.add(k, v) };
+    for ((k, v) in dispatchRecordsStable.vals()) { dispatchRecords.add(k, v) };
+    for ((k, v) in additionalWorkRecordsStable.vals()) { additionalWorkRecords.add(k, v) };
+    for ((k, v) in productionRecordsStable.vals()) { productionRecords.add(k, v) };
+    for ((k, v) in overlockRecordsStable.vals()) { overlockRecords.add(k, v) };
+  };
+
+  system func preupgrade() {
+    itemMastersStable := itemMasters.entries().toArray();
+    tailorRecordsStable := tailorRecords.entries().toArray();
+    dispatchRecordsStable := dispatchRecords.entries().toArray();
+    additionalWorkRecordsStable := additionalWorkRecords.entries().toArray();
+    productionRecordsStable := productionRecords.entries().toArray();
+    overlockRecordsStable := overlockRecords.entries().toArray();
+  };
+
+  system func postupgrade() {
+    itemMastersStable := [];
+    tailorRecordsStable := [];
+    dispatchRecordsStable := [];
+    additionalWorkRecordsStable := [];
+    productionRecordsStable := [];
+    overlockRecordsStable := [];
+  };
 
   // ItemMaster CRUD
   public shared ({ caller }) func addItemMaster(
