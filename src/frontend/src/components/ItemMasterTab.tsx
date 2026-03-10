@@ -178,60 +178,87 @@ export function ItemMasterTab() {
 
     setLoading(true);
     try {
+      // --- backend call only (isolated so post-save ops don't trigger this catch) ---
       if (editId !== null) {
-        await actor.updateItemMaster(
+        const ok = await actor.updateItemMaster(
           editId,
-          form.articleNo,
+          form.articleNo.trim(),
           totalQtyNum,
           colorsStr,
           form.hasAdditionalWork,
           workTypes,
-          flatSizes.XS,
-          flatSizes.S,
-          flatSizes.M,
-          flatSizes.L,
-          flatSizes.XL,
-          flatSizes.XXL,
-          flatSizes["3XL"],
-          flatSizes["4XL"],
-          flatSizes["5XL"],
+          flatSizes.XS ?? 0,
+          flatSizes.S ?? 0,
+          flatSizes.M ?? 0,
+          flatSizes.L ?? 0,
+          flatSizes.XL ?? 0,
+          flatSizes.XXL ?? 0,
+          flatSizes["3XL"] ?? 0,
+          flatSizes["4XL"] ?? 0,
+          flatSizes["5XL"] ?? 0,
           colorSizeData,
         );
-        toast.success("Item updated");
+        if (!ok) {
+          toast.error("Item not found — could not update");
+          setLoading(false);
+          return;
+        }
       } else {
         await actor.addItemMaster(
-          form.articleNo,
+          form.articleNo.trim(),
           totalQtyNum,
           colorsStr,
           form.hasAdditionalWork,
           workTypes,
-          flatSizes.XS,
-          flatSizes.S,
-          flatSizes.M,
-          flatSizes.L,
-          flatSizes.XL,
-          flatSizes.XXL,
-          flatSizes["3XL"],
-          flatSizes["4XL"],
-          flatSizes["5XL"],
+          flatSizes.XS ?? 0,
+          flatSizes.S ?? 0,
+          flatSizes.M ?? 0,
+          flatSizes.L ?? 0,
+          flatSizes.XL ?? 0,
+          flatSizes.XXL ?? 0,
+          flatSizes["3XL"] ?? 0,
+          flatSizes["4XL"] ?? 0,
+          flatSizes["5XL"] ?? 0,
           colorSizeData,
         );
-        toast.success("Item saved");
       }
-
-      // Save rates to localStorage
-      saveArticleRates(form.articleNo, rates);
-
-      setForm(emptyForm());
-      setRates(emptyRates());
-      setEditId(null);
-      setShowForm(false);
-      await loadItems();
-    } catch {
-      toast.error("Failed to save item");
-    } finally {
+    } catch (saveErr) {
+      // Log real error for debugging
+      console.error("[ItemMaster] Backend save error:", saveErr);
+      const msg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+      if (msg.includes("validation") || msg.includes("required")) {
+        toast.error(`Validation error: ${msg}`);
+      } else if (
+        msg.includes("network") ||
+        msg.includes("fetch") ||
+        msg.includes("connect")
+      ) {
+        toast.error("Network error — check your connection and try again");
+      } else {
+        toast.error(
+          `Failed to save item: ${msg.length < 120 ? msg : "Server error — please try again"}`,
+        );
+      }
       setLoading(false);
+      return;
     }
+
+    // --- post-save operations (errors here do NOT show "Failed to save item") ---
+    const isUpdate = editId !== null;
+    saveArticleRates(form.articleNo, rates);
+    setForm(emptyForm());
+    setRates(emptyRates());
+    setEditId(null);
+    setShowForm(false);
+    toast.success(
+      isUpdate ? "Item updated successfully" : "Item saved successfully",
+    );
+    setLoading(false);
+
+    // Refresh list — failure here is non-critical
+    await loadItems().catch((e) =>
+      console.warn("[ItemMaster] Refresh failed:", e),
+    );
   };
 
   const handleEdit = (item: ItemMaster) => {
@@ -328,18 +355,13 @@ export function ItemMasterTab() {
       return;
     }
     const sizesObj: Record<string, number> = {};
-    let hasAnySize = false;
     for (const size of ALL_SIZES) {
       const val = Number.parseFloat(newColorSizes[size] || "0") || 0;
       if (val > 0) {
         sizesObj[size] = val;
-        hasAnySize = true;
       }
     }
-    if (!hasAnySize) {
-      toast.error("Enter at least one size quantity");
-      return;
-    }
+    // No blocking if no sizes -- sizes are optional
     const newEntry: ColorEntry = {
       color: newColorName.trim(),
       sizes: sizesObj,
@@ -469,7 +491,7 @@ export function ItemMasterTab() {
           {/* Colors Section */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <Label>Colors &amp; Size-wise Quantity *</Label>
+              <Label>Colors &amp; Size-wise Quantity (Optional)</Label>
               <Button
                 data-ocid="item_master.add_color_button"
                 type="button"
@@ -500,7 +522,8 @@ export function ItemMasterTab() {
                 className="text-xs"
                 style={{ color: "oklch(var(--muted-foreground))" }}
               >
-                No colors added yet. Click "+ Add Color" to start.
+                No colors added (optional). Click "+ Add Color" to add
+                color-wise quantities.
               </p>
             )}
 
@@ -588,7 +611,9 @@ export function ItemMasterTab() {
                 />
               </div>
               <div>
-                <Label className="text-xs mb-2 block">Size-wise Quantity</Label>
+                <Label className="text-xs mb-2 block">
+                  Size-wise Quantity (Optional)
+                </Label>
                 <div className="grid grid-cols-3 gap-2">
                   {ALL_SIZES.map((size) => (
                     <div key={size}>
