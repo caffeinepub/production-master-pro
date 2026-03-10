@@ -1,12 +1,11 @@
 import {
   ClipboardList,
   IndianRupee,
-  Layers,
   Package,
-  PlusSquare,
   Scissors,
   Send,
   Users,
+  Wrench,
 } from "lucide-react";
 import type { TabId } from "../App";
 
@@ -21,30 +20,11 @@ const NAV_ITEMS: Array<{
   icon: React.ElementType;
   ocid: string;
 }> = [
-  { id: "entry", label: "Entry", icon: PlusSquare, ocid: "nav.entry_tab" },
-  {
-    id: "history",
-    label: "History",
-    icon: ClipboardList,
-    ocid: "nav.history_tab",
-  },
-  {
-    id: "master_report",
-    label: "Party Head",
-    icon: Users,
-    ocid: "nav.master_report_tab",
-  },
   {
     id: "item_master",
     label: "Items",
     icon: Package,
     ocid: "nav.item_master_tab",
-  },
-  {
-    id: "payment",
-    label: "Payment",
-    icon: IndianRupee,
-    ocid: "nav.payment_tab",
   },
   {
     id: "tailor",
@@ -53,16 +33,34 @@ const NAV_ITEMS: Array<{
     ocid: "nav.tailor_tab",
   },
   {
-    id: "overlock",
-    label: "Overlock",
-    icon: Layers,
-    ocid: "nav.overlock_tab",
+    id: "add_work",
+    label: "Add Work",
+    icon: Wrench,
+    ocid: "nav.add_work_tab",
   },
   {
     id: "dispatch",
     label: "Dispatch",
     icon: Send,
     ocid: "nav.dispatch_tab",
+  },
+  {
+    id: "payment",
+    label: "Payment",
+    icon: IndianRupee,
+    ocid: "nav.payment_tab",
+  },
+  {
+    id: "master_report",
+    label: "Party Head",
+    icon: Users,
+    ocid: "nav.master_report_tab",
+  },
+  {
+    id: "history",
+    label: "History",
+    icon: ClipboardList,
+    ocid: "nav.history_tab",
   },
 ];
 

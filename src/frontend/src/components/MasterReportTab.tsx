@@ -17,81 +17,133 @@ import {
 import { Download, TrendingUp, Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useGetMasterReport, useGetRecords } from "../hooks/useQueries";
+import {
+  useGetDispatchRecords,
+  useGetTailorRecords,
+} from "../hooks/useQueries";
 import { exportToCSV } from "../utils/csvExport";
 
 interface ArticleRow {
   articleNo: string;
-  dispatchedPcs: number;
-  pendingPcs: number;
+  totalDispatched: number;
+  totalProduced: number;
+  balance: number;
 }
 
 export function MasterReportTab() {
-  const { data: masterReport = [], isLoading } = useGetMasterReport();
-  const { data: allRecords = [] } = useGetRecords();
+  const { data: dispatchRecords = [], isLoading: loadingDispatch } =
+    useGetDispatchRecords();
+  const { data: tailorRecords = [], isLoading: loadingTailor } =
+    useGetTailorRecords();
+  const isLoading = loadingDispatch || loadingTailor;
 
   const [selectedParty, setSelectedParty] = useState<string | null>(null);
 
-  // Build article-wise detail for the selected party
+  // Derive party list from dispatch records
+  const partyList = useMemo(() => {
+    const names = new Set<string>();
+    for (const r of dispatchRecords) {
+      if (r.partyName?.trim()) names.add(r.partyName.trim());
+    }
+    return Array.from(names).sort();
+  }, [dispatchRecords]);
+
+  // Summary per party
+  const partySummaries = useMemo(() => {
+    return partyList.map((partyName) => {
+      const partyDispatches = dispatchRecords.filter(
+        (r) => r.partyName === partyName,
+      );
+      const totalDispatched = partyDispatches.reduce(
+        (s, r) => s + r.dispatchPcs,
+        0,
+      );
+      const totalPayment = partyDispatches.reduce(
+        (s, r) => s + r.finalPayment,
+        0,
+      );
+      return { partyName, totalDispatched, totalPayment };
+    });
+  }, [partyList, dispatchRecords]);
+
+  // Article-wise breakdown for selected party
   const partyArticleRows = useMemo((): ArticleRow[] => {
     if (!selectedParty) return [];
-    const filtered = allRecords.filter((r) => r.partyName === selectedParty);
-    const articleMap = new Map<
-      string,
-      { dispatchedPcs: number; pendingPcs: number }
-    >();
-    for (const r of filtered) {
-      const existing = articleMap.get(r.articleNo) ?? {
-        dispatchedPcs: 0,
-        pendingPcs: 0,
-      };
-      articleMap.set(r.articleNo, {
-        dispatchedPcs: existing.dispatchedPcs + r.dispatchedPcs,
-        pendingPcs: existing.pendingPcs + r.totalPcs,
-      });
+
+    // Dispatched articles for this party
+    const partyDispatches = dispatchRecords.filter(
+      (r) => r.partyName === selectedParty,
+    );
+    const dispatchByArticle = new Map<string, number>();
+    for (const r of partyDispatches) {
+      dispatchByArticle.set(
+        r.articleNo,
+        (dispatchByArticle.get(r.articleNo) ?? 0) + r.dispatchPcs,
+      );
     }
-    return Array.from(articleMap.entries()).map(([articleNo, data]) => ({
-      articleNo,
-      ...data,
-    }));
-  }, [allRecords, selectedParty]);
+
+    // Produced (tailor) - article level totals (not party-specific)
+    const producedByArticle = new Map<string, number>();
+    for (const r of tailorRecords) {
+      producedByArticle.set(
+        r.articleNo,
+        (producedByArticle.get(r.articleNo) ?? 0) + r.pcsGiven,
+      );
+    }
+
+    return Array.from(dispatchByArticle.entries()).map(
+      ([articleNo, totalDispatched]) => {
+        const totalProduced = producedByArticle.get(articleNo) ?? 0;
+        return {
+          articleNo,
+          totalDispatched,
+          totalProduced,
+          balance: totalDispatched - totalProduced,
+        };
+      },
+    );
+  }, [selectedParty, dispatchRecords, tailorRecords]);
 
   const partyTotals = useMemo(() => {
     return partyArticleRows.reduce(
       (acc, row) => ({
-        dispatchedPcs: acc.dispatchedPcs + row.dispatchedPcs,
-        pendingPcs: acc.pendingPcs + row.pendingPcs,
+        totalDispatched: acc.totalDispatched + row.totalDispatched,
+        totalProduced: acc.totalProduced + row.totalProduced,
+        totalBalance: acc.totalBalance + row.balance,
       }),
-      { dispatchedPcs: 0, pendingPcs: 0 },
+      { totalDispatched: 0, totalProduced: 0, totalBalance: 0 },
     );
   }, [partyArticleRows]);
 
+  const summaryTotals = useMemo(() => {
+    return partySummaries.reduce(
+      (acc, s) => ({
+        totalPcs: acc.totalPcs + s.totalDispatched,
+        totalAmount: acc.totalAmount + s.totalPayment,
+      }),
+      { totalPcs: 0, totalAmount: 0 },
+    );
+  }, [partySummaries]);
+
   const handleExport = () => {
-    if (masterReport.length === 0) {
+    if (partySummaries.length === 0) {
       toast.error("No data to export");
       return;
     }
-    const headers = ["Party Name", "Total Pcs Produced", "Total Payment (₨)"];
-    const rows = masterReport.map(([name, pcs, amount]) => [
-      name,
-      pcs,
-      amount.toFixed(2),
+    const headers = ["Party Name", "Total Dispatched PCS", "Total Payment (₹)"];
+    const rows = partySummaries.map((s) => [
+      s.partyName,
+      s.totalDispatched,
+      s.totalPayment.toFixed(2),
     ]);
     exportToCSV("party_head_report", headers, rows);
     toast.success("Party head report exported");
   };
 
-  // Calculate totals
-  const totalPcs = masterReport.reduce((sum, [, pcs]) => sum + pcs, 0);
-  const totalAmount = masterReport.reduce(
-    (sum, [, , amount]) => sum + amount,
-    0,
-  );
-
   return (
     <div className="px-4 py-4 space-y-4">
       {/* Summary Totals Card */}
-      {!isLoading && masterReport.length > 0 && (
+      {!isLoading && partySummaries.length > 0 && (
         <div
           className="rounded-lg p-4 grid grid-cols-2 gap-4"
           style={{
@@ -100,21 +152,21 @@ export function MasterReportTab() {
           }}
         >
           <div>
-            <div className="data-label mb-1">Total Pcs</div>
+            <div className="data-label mb-1">Total Dispatched</div>
             <div
               className="data-value"
               style={{ color: "oklch(var(--primary))" }}
             >
-              {totalPcs.toLocaleString()}
+              {summaryTotals.totalPcs.toLocaleString()}
             </div>
           </div>
           <div>
-            <div className="data-label mb-1">Total Amount</div>
+            <div className="data-label mb-1">Total Payment</div>
             <div
               className="data-value"
               style={{ color: "oklch(var(--success))" }}
             >
-              ₨ {totalAmount.toFixed(0)}
+              ₹ {summaryTotals.totalAmount.toFixed(0)}
             </div>
           </div>
         </div>
@@ -131,8 +183,8 @@ export function MasterReportTab() {
             className="data-label"
             style={{ color: "oklch(var(--foreground))" }}
           >
-            {masterReport.length} Party Head
-            {masterReport.length !== 1 ? "s" : ""}
+            {partySummaries.length} Party Head
+            {partySummaries.length !== 1 ? "s" : ""}
           </span>
         </div>
         <Button
@@ -163,7 +215,7 @@ export function MasterReportTab() {
       )}
 
       {/* Empty State */}
-      {!isLoading && masterReport.length === 0 && (
+      {!isLoading && partySummaries.length === 0 && (
         <div
           data-ocid="party_head.empty_state"
           className="flex flex-col items-center justify-center py-16 gap-3"
@@ -183,96 +235,94 @@ export function MasterReportTab() {
               No Party Head Data
             </div>
             <div className="text-sm mt-1">
-              Save production records to see party head reports
+              Add dispatch records with party names to see reports
             </div>
           </div>
         </div>
       )}
 
       {/* Party Head Cards */}
-      {!isLoading && masterReport.length > 0 && (
+      {!isLoading && partySummaries.length > 0 && (
         <div data-ocid="party_head.list" className="space-y-2">
-          {masterReport.map(
-            ([masterName, totalPcsProduced, totalPayment], index) => {
-              const ocidIndex = index + 1;
-              const ocid =
-                ocidIndex <= 3
-                  ? `party_head.item.${ocidIndex}`
-                  : "party_head.item";
-              return (
-                <button
-                  key={masterName}
-                  type="button"
-                  data-ocid={ocid}
-                  onClick={() => setSelectedParty(masterName)}
-                  className="w-full text-left rounded-lg border p-4 space-y-3 transition-all hover:shadow-md active:scale-[0.99] cursor-pointer"
-                  style={{
-                    background: "oklch(var(--card))",
-                    borderColor: "oklch(var(--border))",
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-heading font-bold text-sm"
-                        style={{
-                          background: "oklch(var(--primary) / 0.12)",
-                          color: "oklch(var(--primary))",
-                        }}
-                      >
-                        {masterName.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-heading font-bold text-base leading-tight truncate">
-                          {masterName}
-                        </div>
-                        <div
-                          className="text-xs"
-                          style={{ color: "oklch(var(--muted-foreground))" }}
-                        >
-                          Party Head • Tap for details
-                        </div>
-                      </div>
-                    </div>
+          {partySummaries.map((s, index) => {
+            const ocidIndex = index + 1;
+            const ocid =
+              ocidIndex <= 3
+                ? `party_head.item.${ocidIndex}`
+                : "party_head.item";
+            return (
+              <button
+                key={s.partyName}
+                type="button"
+                data-ocid={ocid}
+                onClick={() => setSelectedParty(s.partyName)}
+                className="w-full text-left rounded-lg border p-4 space-y-3 transition-all hover:shadow-md active:scale-[0.99] cursor-pointer"
+                style={{
+                  background: "oklch(var(--card))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className="text-xs font-semibold px-2 py-1 rounded"
+                      className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-heading font-bold text-sm"
                       style={{
-                        background: "oklch(var(--primary) / 0.1)",
+                        background: "oklch(var(--primary) / 0.12)",
                         color: "oklch(var(--primary))",
                       }}
                     >
-                      View
+                      {s.partyName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-heading font-bold text-base leading-tight truncate">
+                        {s.partyName}
+                      </div>
+                      <div
+                        className="text-xs"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        Party Head • Tap for details
+                      </div>
                     </div>
                   </div>
                   <div
-                    className="grid grid-cols-2 gap-3 border-t pt-3"
-                    style={{ borderColor: "oklch(var(--border))" }}
+                    className="text-xs font-semibold px-2 py-1 rounded"
+                    style={{
+                      background: "oklch(var(--primary) / 0.1)",
+                      color: "oklch(var(--primary))",
+                    }}
                   >
-                    <div>
-                      <div className="data-label mb-0.5">
-                        Total Pcs Produced
-                      </div>
-                      <div
-                        className="font-heading font-bold text-xl leading-none"
-                        style={{ color: "oklch(var(--primary))" }}
-                      >
-                        {totalPcsProduced.toLocaleString()}
-                      </div>
+                    View
+                  </div>
+                </div>
+                <div
+                  className="grid grid-cols-2 gap-3 border-t pt-3"
+                  style={{ borderColor: "oklch(var(--border))" }}
+                >
+                  <div>
+                    <div className="data-label mb-0.5">
+                      Total Dispatched PCS
                     </div>
-                    <div>
-                      <div className="data-label mb-0.5">Total Payment</div>
-                      <div
-                        className="font-heading font-bold text-xl leading-none"
-                        style={{ color: "oklch(var(--success))" }}
-                      >
-                        ₨ {totalPayment.toFixed(2)}
-                      </div>
+                    <div
+                      className="font-heading font-bold text-xl leading-none"
+                      style={{ color: "oklch(var(--primary))" }}
+                    >
+                      {s.totalDispatched.toLocaleString()}
                     </div>
                   </div>
-                </button>
-              );
-            },
-          )}
+                  <div>
+                    <div className="data-label mb-0.5">Total Payment</div>
+                    <div
+                      className="font-heading font-bold text-xl leading-none"
+                      style={{ color: "oklch(var(--success))" }}
+                    >
+                      ₹ {s.totalPayment.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -317,32 +367,45 @@ export function MasterReportTab() {
           {/* Totals Summary */}
           {partyArticleRows.length > 0 && (
             <div
-              className="rounded-lg p-3 grid grid-cols-2 gap-3 shrink-0"
+              className="rounded-lg p-3 grid grid-cols-3 gap-2 shrink-0"
               style={{
                 background: "oklch(var(--primary) / 0.06)",
                 border: "1.5px solid oklch(var(--primary) / 0.2)",
               }}
             >
               <div>
-                <div className="data-label text-xs mb-0.5">
-                  Total Dispatched
-                </div>
+                <div className="data-label text-xs mb-0.5">Dispatched</div>
                 <div
-                  className="font-heading font-bold text-lg leading-none"
+                  className="font-heading font-bold text-base leading-none"
                   style={{ color: "oklch(var(--foreground))" }}
                 >
-                  {partyTotals.dispatchedPcs.toLocaleString()}
-                  <span className="text-xs font-normal ml-1">PCS</span>
+                  {partyTotals.totalDispatched}
+                  <span className="text-xs font-normal ml-0.5">PCS</span>
                 </div>
               </div>
               <div>
-                <div className="data-label text-xs mb-0.5">Total Pending</div>
+                <div className="data-label text-xs mb-0.5">Produced</div>
                 <div
-                  className="font-heading font-bold text-lg leading-none"
+                  className="font-heading font-bold text-base leading-none"
                   style={{ color: "oklch(var(--primary))" }}
                 >
-                  {partyTotals.pendingPcs.toLocaleString()}
-                  <span className="text-xs font-normal ml-1">PCS</span>
+                  {partyTotals.totalProduced}
+                  <span className="text-xs font-normal ml-0.5">PCS</span>
+                </div>
+              </div>
+              <div>
+                <div className="data-label text-xs mb-0.5">Balance</div>
+                <div
+                  className="font-heading font-bold text-base leading-none"
+                  style={{
+                    color:
+                      partyTotals.totalBalance < 0
+                        ? "oklch(var(--destructive))"
+                        : "oklch(var(--success))",
+                  }}
+                >
+                  {partyTotals.totalBalance}
+                  <span className="text-xs font-normal ml-0.5">PCS</span>
                 </div>
               </div>
             </div>
@@ -355,7 +418,9 @@ export function MasterReportTab() {
                 className="flex flex-col items-center justify-center py-10 gap-2"
                 style={{ color: "oklch(var(--muted-foreground))" }}
               >
-                <div className="text-sm">No records found for this party</div>
+                <div className="text-sm">
+                  No dispatch records found for this party
+                </div>
               </div>
             ) : (
               <Table data-ocid="party_head.detail.table">
@@ -365,10 +430,13 @@ export function MasterReportTab() {
                       Article No
                     </TableHead>
                     <TableHead className="text-xs font-semibold text-right">
-                      Dispatched PCS
+                      Dispatched
                     </TableHead>
                     <TableHead className="text-xs font-semibold text-right">
-                      Pending PCS
+                      Produced
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold text-right">
+                      Balance
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -382,17 +450,24 @@ export function MasterReportTab() {
                         {row.articleNo}
                       </TableCell>
                       <TableCell className="text-right text-sm">
-                        {row.dispatchedPcs.toLocaleString()}
+                        {row.totalDispatched}
+                      </TableCell>
+                      <TableCell className="text-right text-sm">
+                        {row.totalProduced}
                       </TableCell>
                       <TableCell
                         className="text-right text-sm font-semibold"
-                        style={{ color: "oklch(var(--primary))" }}
+                        style={{
+                          color:
+                            row.balance < 0
+                              ? "oklch(var(--destructive))"
+                              : "oklch(var(--success))",
+                        }}
                       >
-                        {row.pendingPcs.toLocaleString()}
+                        {row.balance}
                       </TableCell>
                     </TableRow>
                   ))}
-                  {/* Totals Row */}
                   <TableRow
                     style={{
                       background: "oklch(var(--muted))",
@@ -400,17 +475,22 @@ export function MasterReportTab() {
                     }}
                   >
                     <TableCell className="font-bold text-sm">Total</TableCell>
-                    <TableCell
-                      className="text-right font-bold text-sm"
-                      style={{ color: "oklch(var(--foreground))" }}
-                    >
-                      {partyTotals.dispatchedPcs.toLocaleString()}
+                    <TableCell className="text-right font-bold text-sm">
+                      {partyTotals.totalDispatched}
+                    </TableCell>
+                    <TableCell className="text-right font-bold text-sm">
+                      {partyTotals.totalProduced}
                     </TableCell>
                     <TableCell
                       className="text-right font-bold text-sm"
-                      style={{ color: "oklch(var(--primary))" }}
+                      style={{
+                        color:
+                          partyTotals.totalBalance < 0
+                            ? "oklch(var(--destructive))"
+                            : "oklch(var(--success))",
+                      }}
                     >
-                      {partyTotals.pendingPcs.toLocaleString()}
+                      {partyTotals.totalBalance}
                     </TableCell>
                   </TableRow>
                 </TableBody>

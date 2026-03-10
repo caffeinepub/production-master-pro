@@ -10,23 +10,46 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface AdditionalWorkRecord {
+  'id' : bigint,
+  'workType' : string,
+  'employeeName' : string,
+  'pcsDone' : number,
+  'date' : string,
+  'color' : string,
+  'size' : string,
+  'ratePerPcs' : number,
+  'articleNo' : string,
+  'totalAmount' : number,
+}
 export interface DispatchRecord {
   'id' : bigint,
-  'date' : string,
+  'dispatchDate' : string,
+  'dispatchPcs' : number,
   'finalPayment' : number,
   'articleNo' : string,
+  'sizeWiseBreakup' : string,
   'salePrice' : number,
-  'dispatchQuantity' : number,
+  'partyName' : string,
   'percentage' : number,
+  'colorWiseBreakup' : string,
 }
 export interface ItemMaster {
   'id' : bigint,
+  'size3XL' : number,
+  'size4XL' : number,
+  'size5XL' : number,
   'sizeXXL' : number,
+  'hasAdditionalWork' : boolean,
   'sizeL' : number,
   'sizeM' : number,
   'sizeS' : number,
   'articleNo' : string,
   'sizeXL' : number,
+  'sizeXS' : number,
+  'colors' : string,
+  'workTypes' : string,
+  'colorSizeData' : string,
   'totalQuantity' : number,
 }
 export interface OverlockRecord {
@@ -53,45 +76,72 @@ export interface ProductionRecord {
 }
 export interface TailorRecord {
   'id' : bigint,
-  'finalAmount' : number,
-  'pcsRate' : number,
+  'pcsGiven' : number,
   'date' : string,
   'tailorName' : string,
   'color' : string,
+  'tailorRate' : number,
   'size' : string,
   'articleNo' : string,
-  'quantity' : number,
+  'tailorAmount' : number,
 }
 export interface _SERVICE {
+  'addAdditionalWorkRecord' : ActorMethod<
+    [string, string, string, string, number, number, string, string],
+    bigint
+  >,
   'addDispatchRecord' : ActorMethod<
-    [string, string, number, number, number, number],
+    [string, string, string, number, number, number, string, string],
     bigint
   >,
   'addItemMaster' : ActorMethod<
-    [string, number, number, number, number, number, number],
+    [
+      string,
+      number,
+      string,
+      boolean,
+      string,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      string,
+    ],
     bigint
   >,
   'addOverlockRecord' : ActorMethod<
     [string, string, string, string, number, number, number],
     bigint
   >,
-  'addRecord' : ActorMethod<
+  'addProductionRecord' : ActorMethod<
     [string, string, string, number, number, number, number, number, number],
     bigint
   >,
   'addTailorRecord' : ActorMethod<
-    [string, string, string, string, string, number, number, number],
+    [string, string, string, number, number, number, string, string],
     bigint
   >,
+  'deleteAdditionalWorkRecord' : ActorMethod<[bigint], boolean>,
   'deleteDispatchRecord' : ActorMethod<[bigint], boolean>,
   'deleteItemMaster' : ActorMethod<[bigint], boolean>,
   'deleteOverlockRecord' : ActorMethod<[bigint], boolean>,
-  'deleteRecord' : ActorMethod<[bigint], boolean>,
+  'deleteProductionRecord' : ActorMethod<[bigint], boolean>,
   'deleteTailorRecord' : ActorMethod<[bigint], boolean>,
-  'getArticleRemainingBySize' : ActorMethod<
+  'getAdditionalWorkByArticle' : ActorMethod<
     [string],
-    [] | [[number, number, number, number, number]]
+    Array<AdditionalWorkRecord>
   >,
+  'getAdditionalWorkQtyByColorSize' : ActorMethod<
+    [string, string, string],
+    number
+  >,
+  'getAdditionalWorkRecords' : ActorMethod<[], Array<AdditionalWorkRecord>>,
+  'getArticleRemainingQty' : ActorMethod<[string], [] | [number]>,
   'getArticleReport' : ActorMethod<[], Array<[string, number]>>,
   'getDispatchRecords' : ActorMethod<[], Array<DispatchRecord>>,
   'getDispatchedQtyByArticle' : ActorMethod<[string], number>,
@@ -101,22 +151,45 @@ export interface _SERVICE {
   'getMasterReport' : ActorMethod<[], Array<[string, number, number]>>,
   'getOverlockRecords' : ActorMethod<[], Array<OverlockRecord>>,
   'getOverlockReport' : ActorMethod<[], Array<[string, number, number]>>,
-  'getRecords' : ActorMethod<[], Array<ProductionRecord>>,
+  'getPaymentSummary' : ActorMethod<[], Array<[string, number, number]>>,
+  'getProductionRecords' : ActorMethod<[], Array<ProductionRecord>>,
+  'getStitchedQtyByColorSize' : ActorMethod<[string, string, string], number>,
   'getTailorRecords' : ActorMethod<[], Array<TailorRecord>>,
   'getTailorReport' : ActorMethod<[], Array<[string, number, number]>>,
+  'updateAdditionalWorkRecord' : ActorMethod<
+    [bigint, string, string, string, string, number, number, string, string],
+    boolean
+  >,
   'updateDispatchRecord' : ActorMethod<
-    [bigint, string, string, number, number, number, number],
+    [bigint, string, string, string, number, number, number, string, string],
     boolean
   >,
   'updateItemMaster' : ActorMethod<
-    [bigint, string, number, number, number, number, number, number],
+    [
+      bigint,
+      string,
+      number,
+      string,
+      boolean,
+      string,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      string,
+    ],
     boolean
   >,
   'updateOverlockRecord' : ActorMethod<
     [bigint, string, string, string, string, number, number, number],
     boolean
   >,
-  'updateRecord' : ActorMethod<
+  'updateProductionRecord' : ActorMethod<
     [
       bigint,
       string,
@@ -132,7 +205,7 @@ export interface _SERVICE {
     boolean
   >,
   'updateTailorRecord' : ActorMethod<
-    [bigint, string, string, string, string, string, number, number, number],
+    [bigint, string, string, string, number, number, number, string, string],
     boolean
   >,
 }

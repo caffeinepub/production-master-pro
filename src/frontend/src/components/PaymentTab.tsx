@@ -1,140 +1,95 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Download,
-  IndianRupee,
-  Lock,
-  LockOpen,
-  TrendingUp,
-  Wallet,
-} from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useGetRecords } from "../hooks/useQueries";
-import { exportToCSV } from "../utils/csvExport";
+import type { DispatchRecord } from "../backend";
+import { useActor } from "../hooks/useActor";
 
 const PAYMENT_PIN = "8807";
 
-function getFirstDayOfMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
-function getTodayDate() {
-  return new Date().toISOString().split("T")[0];
-}
-
 export function PaymentTab() {
-  const [isUnlocked, setIsUnlocked] = useState(false);
+  const { actor } = useActor();
+  const [authenticated, setAuthenticated] = useState(false);
   const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState(false);
+  const [pinError, setPinError] = useState("");
+  const [summary, setSummary] = useState<[string, number, number][]>([]);
+  const [records, setRecords] = useState<DispatchRecord[]>([]);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const loadData = async () => {
+    if (!actor) return;
+    const [sum, recs] = await Promise.all([
+      actor.getPaymentSummary().catch(() => []),
+      actor.getDispatchRecords().catch(() => []),
+    ]);
+    setSummary(sum as typeof sum);
+    setRecords(recs as typeof recs);
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load when authenticated
+  useEffect(() => {
+    if (authenticated && actor) loadData();
+  }, [authenticated, actor]);
 
   const handleUnlock = () => {
     if (pin === PAYMENT_PIN) {
-      setIsUnlocked(true);
-      setPinError(false);
-      setPin("");
+      setAuthenticated(true);
+      setPinError("");
     } else {
-      setPinError(true);
-      setPin("");
+      setPinError("Incorrect PIN. Please try again.");
     }
   };
 
-  const handleLock = () => {
-    setIsUnlocked(false);
-    setPin("");
-    setPinError(false);
-  };
-
-  if (!isUnlocked) {
+  if (!authenticated) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6">
+      <div className="p-4 pb-24 flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div
-          className="w-full max-w-xs rounded-2xl p-8 space-y-6"
+          className="rounded-2xl border p-6 w-full max-w-xs space-y-4"
           style={{
             background: "oklch(var(--card))",
-            border: "1.5px solid oklch(var(--border))",
-            boxShadow: "0 4px 24px oklch(0.3 0.05 220 / 0.1)",
+            borderColor: "oklch(var(--border))",
           }}
         >
-          {/* Icon */}
-          <div className="flex flex-col items-center gap-3">
-            <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center"
-              style={{
-                background: "oklch(var(--primary) / 0.12)",
-                border: "2px solid oklch(var(--primary) / 0.25)",
-              }}
+          <div className="text-center">
+            <p className="text-3xl mb-2">🔒</p>
+            <h2 className="text-lg font-bold">Payment Tab</h2>
+            <p
+              className="text-sm"
+              style={{ color: "oklch(var(--muted-foreground))" }}
             >
-              <Lock
-                className="w-7 h-7"
-                style={{ color: "oklch(var(--primary))" }}
-              />
-            </div>
-            <div className="text-center">
-              <div
-                className="font-heading font-bold text-lg leading-tight"
-                style={{ fontFamily: "Cabinet Grotesk, sans-serif" }}
-              >
-                Payment Access
-              </div>
-              <div
-                className="text-sm mt-1"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                Enter PIN to view payment data
-              </div>
-            </div>
+              Enter PIN to access
+            </p>
           </div>
-
-          {/* PIN Input */}
-          <div className="space-y-2">
-            <Label className="data-label sr-only">PIN</Label>
+          <div>
+            <Label>PIN</Label>
             <Input
               data-ocid="payment.pin_input"
               type="password"
               inputMode="numeric"
-              maxLength={4}
-              placeholder="Enter 4-digit PIN"
               value={pin}
-              onChange={(e) => {
-                setPin(e.target.value);
-                setPinError(false);
-              }}
+              onChange={(e) => setPin(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleUnlock();
               }}
-              className="input-factory text-center text-xl tracking-widest"
-              style={{
-                borderColor: pinError ? "oklch(var(--destructive))" : undefined,
-                letterSpacing: "0.4em",
-              }}
-              autoFocus
+              placeholder="Enter PIN"
+              maxLength={6}
             />
             {pinError && (
               <p
-                data-ocid="payment.pin_error_state"
-                className="text-xs font-medium text-center"
+                className="text-xs mt-1"
                 style={{ color: "oklch(var(--destructive))" }}
               >
-                Incorrect PIN. Try again.
+                {pinError}
               </p>
             )}
           </div>
-
           <Button
-            data-ocid="payment.unlock_button"
+            data-ocid="payment.submit_button"
             onClick={handleUnlock}
             className="w-full"
-            size="lg"
-            style={{
-              background: "oklch(var(--primary))",
-              color: "oklch(var(--primary-foreground))",
-            }}
           >
-            <LockOpen className="w-4 h-4 mr-2" />
             Unlock
           </Button>
         </div>
@@ -142,355 +97,164 @@ export function PaymentTab() {
     );
   }
 
-  return <PaymentContent onLock={handleLock} />;
-}
+  const filteredRecords = records.filter((r) => {
+    if (startDate && r.dispatchDate < startDate) return false;
+    if (endDate && r.dispatchDate > endDate) return false;
+    return true;
+  });
 
-function PaymentContent({ onLock }: { onLock: () => void }) {
-  const [fromDate, setFromDate] = useState(getFirstDayOfMonth());
-  const [toDate, setToDate] = useState(getTodayDate());
-
-  const { data: records = [], isLoading } = useGetRecords();
-
-  const filtered = useMemo(() => {
-    if (!fromDate && !toDate) return records;
-    return records.filter((r) => {
-      if (fromDate && r.date < fromDate) return false;
-      if (toDate && r.date > toDate) return false;
-      return true;
-    });
-  }, [records, fromDate, toDate]);
-
-  // Summary stats
-  const totalPayment = useMemo(
-    () => filtered.reduce((sum, r) => sum + r.finalAmount, 0),
-    [filtered],
+  const totalPayment = filteredRecords.reduce(
+    (sum, r) => sum + r.finalPayment,
+    0,
   );
-  const totalDispatchedPcs = useMemo(
-    () => filtered.reduce((sum, r) => sum + r.dispatchedPcs, 0),
-    [filtered],
-  );
-  const totalPendingPcs = useMemo(
-    () => filtered.reduce((sum, r) => sum + r.totalPcs, 0),
-    [filtered],
-  );
-
-  // Group by master
-  const byMaster = useMemo(() => {
-    const map = new Map<
-      string,
-      { dispatched: number; pending: number; amount: number; count: number }
-    >();
-    for (const r of filtered) {
-      const existing = map.get(r.partyName) ?? {
-        dispatched: 0,
-        pending: 0,
-        amount: 0,
-        count: 0,
-      };
-      map.set(r.partyName, {
-        dispatched: existing.dispatched + r.dispatchedPcs,
-        pending: existing.pending + r.totalPcs,
-        amount: existing.amount + r.finalAmount,
-        count: existing.count + 1,
-      });
-    }
-    return Array.from(map.entries()).sort((a, b) => b[1].amount - a[1].amount);
-  }, [filtered]);
-
-  const handleExport = () => {
-    if (byMaster.length === 0) {
-      toast.error("No payment data to export");
-      return;
-    }
-    const headers = [
-      "Party Name",
-      "Records",
-      "Dispatched Pcs",
-      "Pending Pcs",
-      "Net Payment (₨)",
-    ];
-    const rows = byMaster.map(([name, d]) => [
-      name,
-      d.count,
-      d.dispatched,
-      d.pending,
-      d.amount.toFixed(2),
-    ]);
-    exportToCSV(`payment_report_${fromDate}_to_${toDate}`, headers, rows);
-    toast.success("Payment report exported");
-  };
+  const totalPcs = filteredRecords.reduce((sum, r) => sum + r.dispatchPcs, 0);
 
   return (
-    <div className="px-4 py-4 space-y-4">
-      {/* Lock button */}
-      <div className="flex justify-end">
+    <div className="p-4 pb-24 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2
+          className="text-lg font-bold"
+          style={{ color: "oklch(var(--foreground))" }}
+        >
+          Payment
+        </h2>
         <Button
-          data-ocid="payment.lock_button"
           variant="outline"
           size="sm"
-          onClick={onLock}
-          className="gap-2 h-8 text-xs"
-          style={{ color: "oklch(var(--muted-foreground))" }}
+          onClick={() => setAuthenticated(false)}
         >
-          <Lock className="w-3.5 h-3.5" />
           Lock
         </Button>
       </div>
 
-      {/* Date Range Filter */}
       <div
-        className="rounded-lg p-4 space-y-3"
+        className="rounded-xl border p-3 space-y-2"
         style={{
-          background: "oklch(var(--muted))",
-          border: "1.5px solid oklch(var(--border))",
+          background: "oklch(var(--card))",
+          borderColor: "oklch(var(--border))",
         }}
       >
-        <div className="flex items-center gap-2 mb-1">
-          <Wallet
-            className="w-4 h-4"
-            style={{ color: "oklch(var(--primary))" }}
-          />
-          <span
-            className="data-label font-semibold"
-            style={{ color: "oklch(var(--foreground))" }}
+        <h3 className="font-semibold text-sm">Summary by Party</h3>
+        {summary.length === 0 && (
+          <p
+            className="text-sm"
+            style={{ color: "oklch(var(--muted-foreground))" }}
           >
-            Select Time Period
-          </span>
+            No dispatch records yet.
+          </p>
+        )}
+        {summary.map(([partyName, totalDispPcs, totalAmt]) => (
+          <div
+            key={partyName}
+            className="flex items-center justify-between py-2 border-b last:border-b-0"
+            style={{ borderColor: "oklch(var(--border))" }}
+          >
+            <div>
+              <p className="font-medium text-sm">{partyName}</p>
+              <p
+                className="text-xs"
+                style={{ color: "oklch(var(--muted-foreground))" }}
+              >
+                {totalDispPcs} pcs dispatched
+              </p>
+            </div>
+            <p className="font-bold" style={{ color: "oklch(var(--primary))" }}>
+              ₹{totalAmt.toFixed(2)}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="rounded-xl border p-3 space-y-3"
+        style={{
+          background: "oklch(var(--card))",
+          borderColor: "oklch(var(--border))",
+        }}
+      >
+        <h3 className="font-semibold text-sm">Filter by Date Range</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs">From</Label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">To</Label>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label className="data-label">From Date</Label>
-            <Input
-              data-ocid="payment.from_date_input"
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="input-factory"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="data-label">To Date</Label>
-            <Input
-              data-ocid="payment.to_date_input"
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="input-factory"
-            />
-          </div>
+        <div
+          className="rounded-lg p-3"
+          style={{ background: "oklch(var(--muted))" }}
+        >
+          <p className="text-sm font-semibold">
+            ₹{totalPayment.toFixed(2)} total
+          </p>
+          <p
+            className="text-xs"
+            style={{ color: "oklch(var(--muted-foreground))" }}
+          >
+            {totalPcs} pcs | {filteredRecords.length} dispatches
+          </p>
         </div>
       </div>
 
-      {/* Loading */}
-      {isLoading && (
-        <div data-ocid="payment.loading_state" className="space-y-3">
-          <div className="rounded-lg border p-4 space-y-2">
-            <Skeleton className="h-6 w-1/2" />
-            <div className="grid grid-cols-3 gap-3">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Card */}
-      {!isLoading && (
-        <div
-          data-ocid="payment.summary_card"
-          className="rounded-lg p-4 space-y-3"
-          style={{
-            background: "oklch(var(--primary) / 0.08)",
-            border: "2px solid oklch(var(--primary) / 0.3)",
-          }}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <IndianRupee
-                className="w-4 h-4"
-                style={{ color: "oklch(var(--primary))" }}
-              />
-              <span
-                className="font-heading font-bold text-sm"
-                style={{ color: "oklch(var(--primary))" }}
-              >
-                Net Payment Earned
-              </span>
-            </div>
-            <span
-              className="text-xs font-medium"
-              style={{ color: "oklch(var(--muted-foreground))" }}
-            >
-              {filtered.length} record{filtered.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
+      <div className="space-y-2">
+        <h3 className="font-semibold text-sm">Dispatch Records</h3>
+        {filteredRecords.length === 0 && (
           <div
-            className="font-heading font-bold text-3xl leading-none"
-            style={{ color: "oklch(var(--success))" }}
+            data-ocid="payment.empty_state"
+            className="text-center py-6"
+            style={{ color: "oklch(var(--muted-foreground))" }}
           >
-            ₨ {totalPayment.toFixed(2)}
+            No records for selected date range.
           </div>
-
+        )}
+        {filteredRecords.map((r, idx) => (
           <div
-            className="grid grid-cols-2 gap-3 pt-2 border-t"
-            style={{ borderColor: "oklch(var(--primary) / 0.2)" }}
+            key={Number(r.id)}
+            data-ocid={`payment.record.${idx + 1}`}
+            className="rounded-xl border p-3"
+            style={{
+              background: "oklch(var(--card))",
+              borderColor: "oklch(var(--border))",
+            }}
           >
-            <div>
-              <div className="data-label mb-0.5">Dispatched Pcs</div>
-              <div
-                className="font-heading font-bold text-xl leading-none"
-                style={{ color: "oklch(var(--foreground))" }}
-              >
-                {totalDispatchedPcs.toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <div className="data-label mb-0.5">Pending Pcs</div>
-              <div
-                className="font-heading font-bold text-xl leading-none"
-                style={{ color: "oklch(var(--primary))" }}
-              >
-                {totalPendingPcs.toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!isLoading && filtered.length === 0 && (
-        <div
-          data-ocid="payment.empty_state"
-          className="flex flex-col items-center justify-center py-12 gap-3"
-          style={{ color: "oklch(var(--muted-foreground))" }}
-        >
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center"
-            style={{ background: "oklch(var(--muted))" }}
-          >
-            <Wallet className="w-8 h-8" />
-          </div>
-          <div className="text-center">
-            <div
-              className="font-heading font-bold text-base"
-              style={{ color: "oklch(var(--foreground))" }}
-            >
-              No Payment Data
-            </div>
-            <div className="text-sm mt-1">
-              No records found for the selected date range
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Per-Party Breakdown */}
-      {!isLoading && byMaster.length > 0 && (
-        <div className="space-y-3">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp
-                className="w-4 h-4"
-                style={{ color: "oklch(var(--primary))" }}
-              />
-              <span
-                className="data-label font-semibold"
-                style={{ color: "oklch(var(--foreground))" }}
-              >
-                Payment by Party
-              </span>
-            </div>
-            <Button
-              data-ocid="payment.export_button"
-              variant="outline"
-              size="sm"
-              onClick={handleExport}
-              className="gap-2 h-9"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </Button>
-          </div>
-
-          {/* Party Cards */}
-          <div data-ocid="payment.list" className="space-y-2">
-            {byMaster.map(([masterName, data], index) => {
-              const ocidIndex = index + 1;
-              const ocid =
-                ocidIndex <= 3 ? `payment.item.${ocidIndex}` : "payment.item";
-              return (
-                <div
-                  key={masterName}
-                  data-ocid={ocid}
-                  className="rounded-lg border p-4 space-y-3"
-                  style={{
-                    background: "oklch(var(--card))",
-                    borderColor: "oklch(var(--border))",
-                  }}
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="font-bold text-sm">{r.articleNo}</p>
+                <p className="text-sm">{r.partyName}</p>
+                <p
+                  className="text-xs"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-heading font-bold text-sm"
-                        style={{
-                          background: "oklch(var(--primary) / 0.12)",
-                          color: "oklch(var(--primary))",
-                        }}
-                      >
-                        {masterName.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="font-heading font-bold text-base leading-tight">
-                          {masterName}
-                        </div>
-                        <div
-                          className="text-xs"
-                          style={{ color: "oklch(var(--muted-foreground))" }}
-                        >
-                          {data.count} record{data.count !== 1 ? "s" : ""}
-                        </div>
-                      </div>
-                    </div>
-                    <div
-                      className="font-heading font-bold text-lg leading-none"
-                      style={{ color: "oklch(var(--success))" }}
-                    >
-                      ₨ {data.amount.toFixed(2)}
-                    </div>
-                  </div>
-
-                  <div
-                    className="grid grid-cols-2 gap-3 border-t pt-3"
-                    style={{ borderColor: "oklch(var(--border))" }}
-                  >
-                    <div>
-                      <div className="data-label mb-0.5">Dispatched Pcs</div>
-                      <div
-                        className="font-heading font-bold text-lg leading-none"
-                        style={{ color: "oklch(var(--foreground))" }}
-                      >
-                        {data.dispatched.toLocaleString()}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="data-label mb-0.5">Pending Pcs</div>
-                      <div
-                        className="font-heading font-bold text-lg leading-none"
-                        style={{ color: "oklch(var(--primary))" }}
-                      >
-                        {data.pending.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                  {r.dispatchDate}
+                </p>
+                <p
+                  className="text-xs"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  {r.dispatchPcs} pcs × ₹{r.salePrice} × {r.percentage}%
+                </p>
+              </div>
+              <p
+                className="font-bold"
+                style={{ color: "oklch(var(--primary))" }}
+              >
+                ₹{r.finalPayment.toFixed(2)}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

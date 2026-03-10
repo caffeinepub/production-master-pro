@@ -1,589 +1,1099 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Layers,
-  Loader2,
-  Package,
-  Pencil,
-  PlusCircle,
-  RotateCcw,
-  Save,
-  Trash2,
-} from "lucide-react";
-import { useCallback, useState } from "react";
+import { Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { ItemMaster } from "../backend";
+import { useActor } from "../hooks/useActor";
 import {
-  useAddItemMaster,
-  useDeleteItemMaster,
-  useGetItemMasters,
-  useUpdateItemMaster,
-} from "../hooks/useQueries";
+  type ArticleRates,
+  loadArticleRates,
+  saveArticleRates,
+} from "../utils/articleRates";
 
-type SubTab = "add" | "list";
+const ALL_SIZES = [
+  "XS",
+  "S",
+  "M",
+  "L",
+  "XL",
+  "XXL",
+  "3XL",
+  "4XL",
+  "5XL",
+] as const;
+type SizeName = (typeof ALL_SIZES)[number];
 
-interface SizeForm {
-  articleNo: string;
-  totalQuantity: string;
-  sizeS: string;
-  sizeM: string;
-  sizeL: string;
-  sizeXL: string;
-  sizeXXL: string;
-}
-
-const INITIAL_FORM: SizeForm = {
-  articleNo: "",
-  totalQuantity: "",
-  sizeS: "",
-  sizeM: "",
-  sizeL: "",
-  sizeXL: "",
-  sizeXXL: "",
+const SIZE_KEYS: Record<SizeName, keyof ItemMaster> = {
+  XS: "sizeXS",
+  S: "sizeS",
+  M: "sizeM",
+  L: "sizeL",
+  XL: "sizeXL",
+  XXL: "sizeXXL",
+  "3XL": "size3XL",
+  "4XL": "size4XL",
+  "5XL": "size5XL",
 };
 
-function sizeSum(form: SizeForm): number {
-  return (
-    (Number(form.sizeS) || 0) +
-    (Number(form.sizeM) || 0) +
-    (Number(form.sizeL) || 0) +
-    (Number(form.sizeXL) || 0) +
-    (Number(form.sizeXXL) || 0)
-  );
+const PREDEFINED_WORK_TYPES = [
+  "Tailor Stitching",
+  "Overlock",
+  "Folding",
+  "Press",
+  "Packing",
+  "Thread Cutting",
+];
+
+const WORK_TYPE_RATE_KEYS: Record<string, keyof ArticleRates> = {
+  "Tailor Stitching": "tailorRate",
+  Overlock: "overlockRate",
+  Folding: "foldingRate",
+  Press: "pressRate",
+  Packing: "packingRate",
+  "Thread Cutting": "threadCuttingRate",
+};
+
+interface ColorEntry {
+  color: string;
+  sizes: Record<string, number>;
+}
+
+interface FormState {
+  articleNo: string;
+  totalQuantity: string;
+  hasAdditionalWork: boolean;
+  selectedWorkTypes: string[];
+  customWorkType: string;
+  colorEntries: ColorEntry[];
+}
+
+const emptyForm = (): FormState => ({
+  articleNo: "",
+  totalQuantity: "",
+  hasAdditionalWork: false,
+  selectedWorkTypes: [],
+  customWorkType: "",
+  colorEntries: [],
+});
+
+const emptyRates = (): ArticleRates => ({
+  tailorRate: 0,
+  overlockRate: 0,
+  foldingRate: 0,
+  pressRate: 0,
+  packingRate: 0,
+  threadCuttingRate: 0,
+  customRates: {},
+});
+
+function parseColorSizeData(raw: string): ColorEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(
+      (entry: { color: string; sizes: Record<string, number> }) => ({
+        color: entry.color || "",
+        sizes: entry.sizes || {},
+      }),
+    );
+  } catch {
+    return [];
+  }
 }
 
 export function ItemMasterTab() {
-  const [subTab, setSubTab] = useState<SubTab>("add");
-  const [form, setForm] = useState<SizeForm>(INITIAL_FORM);
-  const [errors, setErrors] = useState<Partial<SizeForm & { sizeSum: string }>>(
+  const { actor } = useActor();
+  const [items, setItems] = useState<ItemMaster[]>([]);
+  const [form, setForm] = useState<FormState>(emptyForm());
+  const [rates, setRates] = useState<ArticleRates>(emptyRates());
+  const [editId, setEditId] = useState<bigint | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+
+  // Color add form state
+  const [showColorForm, setShowColorForm] = useState(false);
+  const [editColorIndex, setEditColorIndex] = useState<number | null>(null);
+  const [newColorName, setNewColorName] = useState("");
+  const [newColorSizes, setNewColorSizes] = useState<Record<string, string>>(
     {},
   );
-  const [editingId, setEditingId] = useState<bigint | null>(null);
 
-  const { data: itemMasters = [], isLoading } = useGetItemMasters();
-  const addItemMaster = useAddItemMaster();
-  const updateItemMaster = useUpdateItemMaster();
-  const deleteItemMaster = useDeleteItemMaster();
-
-  const totalQty = Number(form.totalQuantity) || 0;
-  const currentSum = sizeSum(form);
-  const sumMatchesTotal = totalQty > 0 && currentSum === totalQty;
-  const sumExceedsTotal = totalQty > 0 && currentSum > totalQty;
-
-  const handleChange = useCallback(
-    (field: keyof SizeForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
-      setErrors((prev) => ({
-        ...prev,
-        [field]: undefined,
-        sizeSum: undefined,
-      }));
-    },
-    [],
-  );
-
-  const validate = (): boolean => {
-    const newErrors: Partial<SizeForm & { sizeSum: string }> = {};
-    if (!form.articleNo.trim()) newErrors.articleNo = "Article No. is required";
-    if (!form.totalQuantity || Number(form.totalQuantity) <= 0)
-      newErrors.totalQuantity = "Enter valid total quantity";
-    if (currentSum !== totalQty)
-      newErrors.sizeSum = "Total of all sizes must match the Total Quantity.";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const loadItems = async () => {
+    if (!actor) return;
+    const data = await actor.getItemMasters().catch(() => []);
+    setItems(data as typeof data);
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
+  useEffect(() => {
+    loadItems();
+  }, [actor]);
+
+  // Sum all quantities across all colors and all sizes
+  const totalColorSizeSum = form.colorEntries.reduce((total, ce) => {
+    return total + Object.values(ce.sizes).reduce((s, v) => s + (v || 0), 0);
+  }, 0);
+
+  const totalQtyNum = Number.parseFloat(form.totalQuantity) || 0;
+  const sizeMatchesTotal =
+    form.colorEntries.length === 0 ||
+    Math.abs(totalColorSizeSum - totalQtyNum) < 0.01;
+
   const handleSave = async () => {
-    if (!validate()) return;
-    const params = {
-      articleNo: form.articleNo.trim(),
-      totalQuantity: Number(form.totalQuantity),
-      sizeS: Number(form.sizeS) || 0,
-      sizeM: Number(form.sizeM) || 0,
-      sizeL: Number(form.sizeL) || 0,
-      sizeXL: Number(form.sizeXL) || 0,
-      sizeXXL: Number(form.sizeXXL) || 0,
-    };
+    if (!actor) {
+      toast.error("Not connected");
+      return;
+    }
+    if (!form.articleNo.trim()) {
+      toast.error("Article Number is required");
+      return;
+    }
+    if (totalQtyNum <= 0) {
+      toast.error("Total Quantity must be greater than 0");
+      return;
+    }
+    if (form.colorEntries.length === 0) {
+      toast.error("Add at least one color with sizes");
+      return;
+    }
+    if (!sizeMatchesTotal) {
+      toast.error(
+        `Total of all sizes (${totalColorSizeSum}) must match Total Quantity (${totalQtyNum})`,
+      );
+      return;
+    }
+
+    // Build colorSizeData JSON
+    const colorSizeData = JSON.stringify(
+      form.colorEntries.map((ce) => ({ color: ce.color, sizes: ce.sizes })),
+    );
+
+    // Legacy colors (comma-joined)
+    const colorsStr = form.colorEntries.map((ce) => ce.color).join(",");
+
+    // Legacy flat size fields: sum each size across all colors
+    const flatSizes: Record<string, number> = {};
+    for (const size of ALL_SIZES) {
+      flatSizes[size] = form.colorEntries.reduce(
+        (sum, ce) => sum + (ce.sizes[size] || 0),
+        0,
+      );
+    }
+
+    const workTypes = form.selectedWorkTypes.join(",");
+
+    setLoading(true);
     try {
-      if (editingId !== null) {
-        await updateItemMaster.mutateAsync({ id: editingId, ...params });
-        toast.success("Item Master updated!");
-        setEditingId(null);
+      if (editId !== null) {
+        await actor.updateItemMaster(
+          editId,
+          form.articleNo,
+          totalQtyNum,
+          colorsStr,
+          form.hasAdditionalWork,
+          workTypes,
+          flatSizes.XS,
+          flatSizes.S,
+          flatSizes.M,
+          flatSizes.L,
+          flatSizes.XL,
+          flatSizes.XXL,
+          flatSizes["3XL"],
+          flatSizes["4XL"],
+          flatSizes["5XL"],
+          colorSizeData,
+        );
+        toast.success("Item updated");
       } else {
-        await addItemMaster.mutateAsync(params);
-        toast.success(`Article ${params.articleNo} created!`);
+        await actor.addItemMaster(
+          form.articleNo,
+          totalQtyNum,
+          colorsStr,
+          form.hasAdditionalWork,
+          workTypes,
+          flatSizes.XS,
+          flatSizes.S,
+          flatSizes.M,
+          flatSizes.L,
+          flatSizes.XL,
+          flatSizes.XXL,
+          flatSizes["3XL"],
+          flatSizes["4XL"],
+          flatSizes["5XL"],
+          colorSizeData,
+        );
+        toast.success("Item saved");
       }
-      setForm(INITIAL_FORM);
-      setErrors({});
-      setSubTab("list");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to save. Please try again.");
+
+      // Save rates to localStorage
+      saveArticleRates(form.articleNo, rates);
+
+      setForm(emptyForm());
+      setRates(emptyRates());
+      setEditId(null);
+      setShowForm(false);
+      await loadItems();
+    } catch {
+      toast.error("Failed to save item");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleEdit = (item: ItemMaster) => {
-    setEditingId(item.id);
+    const colorEntries = parseColorSizeData(item.colorSizeData);
+    const entries: ColorEntry[] =
+      colorEntries.length > 0
+        ? colorEntries
+        : item.colors
+          ? item.colors
+              .split(",")
+              .filter(Boolean)
+              .map((c) => {
+                const sizes: Record<string, number> = {};
+                for (const s of ALL_SIZES) {
+                  sizes[s] = (item[SIZE_KEYS[s]] as number) || 0;
+                }
+                return { color: c.trim(), sizes };
+              })
+          : [];
+
     setForm({
       articleNo: item.articleNo,
       totalQuantity: String(item.totalQuantity),
-      sizeS: String(item.sizeS),
-      sizeM: String(item.sizeM),
-      sizeL: String(item.sizeL),
-      sizeXL: String(item.sizeXL),
-      sizeXXL: String(item.sizeXXL),
+      hasAdditionalWork: item.hasAdditionalWork,
+      selectedWorkTypes: item.workTypes
+        ? item.workTypes.split(",").filter(Boolean)
+        : [],
+      customWorkType: "",
+      colorEntries: entries,
     });
-    setErrors({});
-    setSubTab("add");
+    // Load saved rates for this article
+    setRates(loadArticleRates(item.articleNo));
+    setEditId(item.id);
+    setShowForm(true);
   };
 
-  const handleDelete = async (id: bigint, articleNo: string) => {
+  const handleDelete = async (id: bigint) => {
+    if (!actor) return;
+    if (!confirm("Delete this item?")) return;
     try {
-      await deleteItemMaster.mutateAsync(id);
-      toast.success(`Article ${articleNo} deleted.`);
+      await actor.deleteItemMaster(id);
+      toast.success("Deleted");
+      await loadItems();
     } catch {
-      toast.error("Failed to delete.");
+      toast.error("Failed to delete");
     }
   };
 
-  const handleClear = () => {
-    setForm(INITIAL_FORM);
-    setErrors({});
-    setEditingId(null);
+  const toggleWorkType = (wt: string) => {
+    setForm((f) => ({
+      ...f,
+      selectedWorkTypes: f.selectedWorkTypes.includes(wt)
+        ? f.selectedWorkTypes.filter((x) => x !== wt)
+        : [...f.selectedWorkTypes, wt],
+    }));
   };
 
-  const isPending = addItemMaster.isPending || updateItemMaster.isPending;
+  const addCustomWorkType = () => {
+    const wt = form.customWorkType.trim();
+    if (!wt) return;
+    if (!form.selectedWorkTypes.includes(wt)) {
+      setForm((f) => ({
+        ...f,
+        selectedWorkTypes: [...f.selectedWorkTypes, wt],
+        customWorkType: "",
+      }));
+    } else {
+      setForm((f) => ({ ...f, customWorkType: "" }));
+    }
+  };
+
+  const openAddColorForm = () => {
+    setEditColorIndex(null);
+    setNewColorName("");
+    setNewColorSizes({});
+    setShowColorForm(true);
+  };
+
+  const openEditColorForm = (idx: number) => {
+    const ce = form.colorEntries[idx];
+    setEditColorIndex(idx);
+    setNewColorName(ce.color);
+    setNewColorSizes(
+      Object.fromEntries(
+        Object.entries(ce.sizes).map(([k, v]) => [k, String(v)]),
+      ),
+    );
+    setShowColorForm(true);
+  };
+
+  const saveColorEntry = () => {
+    if (!newColorName.trim()) {
+      toast.error("Color name is required");
+      return;
+    }
+    const sizesObj: Record<string, number> = {};
+    let hasAnySize = false;
+    for (const size of ALL_SIZES) {
+      const val = Number.parseFloat(newColorSizes[size] || "0") || 0;
+      if (val > 0) {
+        sizesObj[size] = val;
+        hasAnySize = true;
+      }
+    }
+    if (!hasAnySize) {
+      toast.error("Enter at least one size quantity");
+      return;
+    }
+    const newEntry: ColorEntry = {
+      color: newColorName.trim(),
+      sizes: sizesObj,
+    };
+    setForm((f) => {
+      const entries = [...f.colorEntries];
+      if (editColorIndex !== null) {
+        entries[editColorIndex] = newEntry;
+      } else {
+        if (
+          entries.some(
+            (e) => e.color.toLowerCase() === newEntry.color.toLowerCase(),
+          )
+        ) {
+          toast.error("Color already added");
+          return f;
+        }
+        entries.push(newEntry);
+      }
+      return { ...f, colorEntries: entries };
+    });
+    setShowColorForm(false);
+    setNewColorName("");
+    setNewColorSizes({});
+    setEditColorIndex(null);
+  };
+
+  const removeColorEntry = (idx: number) => {
+    setForm((f) => ({
+      ...f,
+      colorEntries: f.colorEntries.filter((_, i) => i !== idx),
+    }));
+  };
+
+  // Get all work types that need rates (predefined selected + custom)
+  const workTypesNeedingRates = form.selectedWorkTypes;
+
+  // Get rate for a work type from rates state
+  const getRateForWT = (wt: string): string => {
+    const key = WORK_TYPE_RATE_KEYS[wt];
+    if (key) return String((rates[key] as number) || "");
+    return String(rates.customRates[wt] || "");
+  };
+
+  const setRateForWT = (wt: string, val: string) => {
+    const num = Number.parseFloat(val) || 0;
+    const key = WORK_TYPE_RATE_KEYS[wt];
+    if (key) {
+      setRates((r) => ({ ...r, [key]: num }));
+    } else {
+      setRates((r) => ({
+        ...r,
+        customRates: { ...r.customRates, [wt]: num },
+      }));
+    }
+  };
+
+  // Get saved rates display for item list
+  const getItemRates = (articleNo: string) => {
+    return loadArticleRates(articleNo);
+  };
 
   return (
-    <div className="px-4 py-4 space-y-4">
-      {/* Sub-tab Switcher */}
-      <div
-        className="flex rounded-lg overflow-hidden border"
-        style={{ borderColor: "oklch(var(--border))" }}
-      >
-        <button
-          type="button"
-          data-ocid="item_master.add_tab"
-          onClick={() => setSubTab("add")}
-          className="flex-1 py-2.5 text-sm font-semibold transition-colors"
-          style={{
-            background:
-              subTab === "add"
-                ? "oklch(var(--primary))"
-                : "oklch(var(--muted))",
-            color:
-              subTab === "add"
-                ? "oklch(var(--primary-foreground))"
-                : "oklch(var(--muted-foreground))",
-            fontFamily: "Cabinet Grotesk, sans-serif",
-          }}
+    <div className="p-4 pb-24 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2
+          className="text-lg font-bold"
+          style={{ color: "oklch(var(--foreground))" }}
         >
-          <PlusCircle className="inline w-4 h-4 mr-1.5 mb-0.5" />
-          {editingId !== null ? "Edit Article" : "Add Article"}
-        </button>
-        <button
-          type="button"
-          data-ocid="item_master.list_tab"
-          onClick={() => setSubTab("list")}
-          className="flex-1 py-2.5 text-sm font-semibold transition-colors"
-          style={{
-            background:
-              subTab === "list"
-                ? "oklch(var(--primary))"
-                : "oklch(var(--muted))",
-            color:
-              subTab === "list"
-                ? "oklch(var(--primary-foreground))"
-                : "oklch(var(--muted-foreground))",
-            fontFamily: "Cabinet Grotesk, sans-serif",
+          Item Master
+        </h2>
+        <Button
+          data-ocid="item_master.open_modal_button"
+          onClick={() => {
+            setForm(emptyForm());
+            setRates(emptyRates());
+            setEditId(null);
+            setShowForm(true);
+            setShowColorForm(false);
           }}
+          size="sm"
         >
-          <Layers className="inline w-4 h-4 mr-1.5 mb-0.5" />
-          All Articles ({itemMasters.length})
-        </button>
+          + New Item
+        </Button>
       </div>
 
-      {/* ─── ADD / EDIT FORM ─────────────────────────── */}
-      {subTab === "add" && (
-        <div className="space-y-4">
-          {editingId !== null && (
-            <div
-              className="rounded-lg p-3 flex items-center gap-2"
-              style={{
-                background: "oklch(var(--primary) / 0.08)",
-                border: "1px solid oklch(var(--primary) / 0.25)",
-              }}
-            >
-              <Pencil
-                className="w-4 h-4"
-                style={{ color: "oklch(var(--primary))" }}
-              />
-              <span
-                className="text-sm font-semibold"
+      {showForm && (
+        <div
+          className="rounded-xl border p-4 space-y-3"
+          style={{
+            background: "oklch(var(--card))",
+            borderColor: "oklch(var(--border))",
+          }}
+        >
+          <h3
+            className="font-semibold text-sm"
+            style={{ color: "oklch(var(--foreground))" }}
+          >
+            {editId !== null ? "Edit Item" : "New Item"}
+          </h3>
+
+          <div>
+            <Label>Article Number *</Label>
+            <Input
+              data-ocid="item_master.article_input"
+              value={form.articleNo}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, articleNo: e.target.value }))
+              }
+              placeholder="e.g. ART-001"
+            />
+          </div>
+
+          <div>
+            <Label>Total Cutting Quantity *</Label>
+            <Input
+              data-ocid="item_master.qty_input"
+              type="number"
+              value={form.totalQuantity}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, totalQuantity: e.target.value }))
+              }
+              placeholder="e.g. 500"
+            />
+          </div>
+
+          {/* Colors Section */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Colors &amp; Size-wise Quantity *</Label>
+              <Button
+                data-ocid="item_master.add_color_button"
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={openAddColorForm}
+              >
+                + Add Color
+              </Button>
+            </div>
+
+            {form.colorEntries.length > 0 && form.totalQuantity && (
+              <p
+                className="text-xs mb-2"
                 style={{
-                  color: "oklch(var(--primary))",
-                  fontFamily: "Cabinet Grotesk, sans-serif",
+                  color: sizeMatchesTotal
+                    ? "oklch(var(--primary))"
+                    : "oklch(var(--destructive))",
                 }}
               >
-                Editing: {form.articleNo}
-              </span>
-            </div>
-          )}
+                Total entered: {totalColorSizeSum} / {totalQtyNum} pcs
+                {sizeMatchesTotal ? " ✓" : " — must match total quantity"}
+              </p>
+            )}
 
-          <div className="space-y-3">
-            {/* Article No */}
-            <div className="space-y-1">
-              <Label htmlFor="im-article" className="data-label">
-                Article Number
-              </Label>
-              <Input
-                id="im-article"
-                data-ocid="item_master.article_input"
-                type="text"
-                placeholder="e.g. ART-2024-001"
-                value={form.articleNo}
-                onChange={handleChange("articleNo")}
-                className="input-factory"
-                style={
-                  errors.articleNo
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
-              />
-              {errors.articleNo && (
-                <p
-                  data-ocid="item_master.article_error"
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.articleNo}
-                </p>
-              )}
-            </div>
+            {form.colorEntries.length === 0 && (
+              <p
+                className="text-xs"
+                style={{ color: "oklch(var(--muted-foreground))" }}
+              >
+                No colors added yet. Click "+ Add Color" to start.
+              </p>
+            )}
 
-            {/* Total Quantity */}
-            <div className="space-y-1">
-              <Label htmlFor="im-total" className="data-label">
-                Total Quantity
-              </Label>
-              <Input
-                id="im-total"
-                data-ocid="item_master.total_quantity_input"
-                type="number"
-                inputMode="numeric"
-                placeholder="0"
-                value={form.totalQuantity}
-                onChange={handleChange("totalQuantity")}
-                className="input-factory"
-                style={
-                  errors.totalQuantity
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
-              />
-              {errors.totalQuantity && (
-                <p
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.totalQuantity}
-                </p>
-              )}
-            </div>
-
-            {/* Size-wise Ratio */}
-            <div
-              className="rounded-lg p-3 space-y-3"
-              style={{
-                background: "oklch(var(--muted))",
-                border: "1px solid oklch(var(--border))",
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className="text-sm font-bold"
+            <div className="space-y-2">
+              {form.colorEntries.map((ce, idx) => (
+                <div
+                  key={ce.color}
+                  className="rounded-lg border p-2"
                   style={{
-                    fontFamily: "Cabinet Grotesk, sans-serif",
-                    color: "oklch(var(--foreground))",
+                    background: "oklch(var(--muted) / 0.4)",
+                    borderColor: "oklch(var(--border))",
                   }}
                 >
-                  Size-wise Ratio
-                </span>
-                {totalQty > 0 && (
-                  <span
-                    className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                    style={{
-                      background: sumMatchesTotal
-                        ? "oklch(var(--success) / 0.15)"
-                        : sumExceedsTotal
-                          ? "oklch(var(--destructive) / 0.15)"
-                          : "oklch(var(--primary) / 0.12)",
-                      color: sumMatchesTotal
-                        ? "oklch(var(--success))"
-                        : sumExceedsTotal
-                          ? "oklch(var(--destructive))"
-                          : "oklch(var(--primary))",
-                    }}
-                  >
-                    {currentSum} / {totalQty}
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-5 gap-2">
-                {(
-                  ["sizeS", "sizeM", "sizeL", "sizeXL", "sizeXXL"] as const
-                ).map((key, i) => {
-                  const labels = ["S", "M", "L", "XL", "XXL"];
-                  return (
-                    <div key={key} className="space-y-1">
-                      <Label
-                        htmlFor={`im-${key}`}
-                        className="data-label text-center block"
-                      >
-                        {labels[i]}
-                      </Label>
-                      <Input
-                        id={`im-${key}`}
-                        data-ocid={`item_master.size_${labels[i].toLowerCase()}_input`}
-                        type="number"
-                        inputMode="numeric"
-                        placeholder="0"
-                        value={form[key]}
-                        onChange={handleChange(key)}
-                        className="input-factory text-center px-1"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Size sum validation */}
-              {sumMatchesTotal && (
-                <div
-                  data-ocid="item_master.size_match_success"
-                  className="flex items-center gap-2"
-                >
-                  <CheckCircle2
-                    className="w-4 h-4"
-                    style={{ color: "oklch(var(--success))" }}
-                  />
-                  <span
-                    className="text-xs font-medium"
-                    style={{ color: "oklch(var(--success))" }}
-                  >
-                    Sizes match Total Quantity ✓
-                  </span>
-                </div>
-              )}
-              {errors.sizeSum && (
-                <div
-                  data-ocid="item_master.size_sum_error"
-                  className="flex items-start gap-2"
-                >
-                  <AlertTriangle
-                    className="w-4 h-4 mt-0.5 shrink-0"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  />
-                  <p
-                    className="text-xs font-medium"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  >
-                    {errors.sizeSum}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-2 pt-1">
-            <Button
-              data-ocid="item_master.save_button"
-              onClick={handleSave}
-              disabled={isPending}
-              className="w-full btn-factory"
-              size="lg"
-              style={{
-                background: "oklch(var(--success))",
-                color: "oklch(var(--success-foreground))",
-              }}
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-5 h-5 mr-2" />
-                  {editingId !== null ? "Update Article" : "Save Article"}
-                </>
-              )}
-            </Button>
-            <Button
-              data-ocid="item_master.clear_button"
-              onClick={handleClear}
-              variant="outline"
-              className="w-full btn-factory"
-              size="lg"
-            >
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Clear Form
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ─── LIST VIEW ───────────────────────────────── */}
-      {subTab === "list" && (
-        <div className="space-y-3">
-          {isLoading && (
-            <div
-              data-ocid="item_master.loading_state"
-              className="flex items-center justify-center py-10"
-            >
-              <Loader2
-                className="w-7 h-7 animate-spin"
-                style={{ color: "oklch(var(--primary))" }}
-              />
-            </div>
-          )}
-
-          {!isLoading && itemMasters.length === 0 && (
-            <div
-              data-ocid="item_master.empty_state"
-              className="rounded-xl border-2 border-dashed py-12 text-center"
-              style={{ borderColor: "oklch(var(--border))" }}
-            >
-              <Package
-                className="w-10 h-10 mx-auto mb-3"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              />
-              <p
-                className="font-semibold mb-1"
-                style={{
-                  fontFamily: "Cabinet Grotesk, sans-serif",
-                  color: "oklch(var(--foreground))",
-                }}
-              >
-                No articles yet
-              </p>
-              <p
-                className="text-sm"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                Add your first article using the Add tab.
-              </p>
-            </div>
-          )}
-
-          {itemMasters.map((item, idx) => (
-            <div
-              key={String(item.id)}
-              data-ocid={`item_master.item.${idx + 1}`}
-              className="rounded-lg border overflow-hidden"
-              style={{
-                borderColor: "oklch(var(--border))",
-                background: "oklch(var(--card))",
-              }}
-            >
-              {/* Header */}
-              <div
-                className="px-4 py-2.5 flex items-center justify-between border-b"
-                style={{
-                  borderColor: "oklch(var(--border))",
-                  background: "oklch(var(--muted))",
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <Package
-                    className="w-4 h-4"
-                    style={{ color: "oklch(var(--primary))" }}
-                  />
-                  <span
-                    className="font-bold text-sm"
-                    style={{
-                      fontFamily: "Cabinet Grotesk, sans-serif",
-                      color: "oklch(var(--foreground))",
-                    }}
-                  >
-                    {item.articleNo}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-ocid={`item_master.edit_button.${idx + 1}`}
-                    onClick={() => handleEdit(item)}
-                    className="h-7 w-7 p-0"
-                    style={{ color: "oklch(var(--primary))" }}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-ocid={`item_master.delete_button.${idx + 1}`}
-                    onClick={() => handleDelete(item.id, item.articleNo)}
-                    disabled={deleteItemMaster.isPending}
-                    className="h-7 w-7 p-0"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Body */}
-              <div className="px-4 py-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="data-label">Total Quantity</span>
-                  <span
-                    className="font-bold text-base"
-                    style={{ color: "oklch(var(--primary))" }}
-                  >
-                    {item.totalQuantity.toLocaleString()} pcs
-                  </span>
-                </div>
-                {/* Size breakdown */}
-                <div className="grid grid-cols-5 gap-1 text-center">
-                  {[
-                    { label: "S", val: item.sizeS },
-                    { label: "M", val: item.sizeM },
-                    { label: "L", val: item.sizeL },
-                    { label: "XL", val: item.sizeXL },
-                    { label: "XXL", val: item.sizeXXL },
-                  ].map(({ label, val }) => (
-                    <div
-                      key={label}
-                      className="rounded-md py-1.5"
-                      style={{ background: "oklch(var(--muted))" }}
+                  <div className="flex items-center justify-between mb-1">
+                    <span
+                      className="font-semibold text-sm"
+                      style={{ color: "oklch(var(--foreground))" }}
                     >
-                      <div
-                        className="text-xs font-bold"
-                        style={{ color: "oklch(var(--primary))" }}
+                      {ce.color}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditColorForm(idx)}
+                        className="h-6 text-xs px-2"
                       >
-                        {label}
-                      </div>
-                      <div
-                        className="text-sm font-semibold"
-                        style={{ color: "oklch(var(--foreground))" }}
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => removeColorEntry(idx)}
+                        className="h-6 px-2"
                       >
-                        {val}
-                      </div>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(ce.sizes)
+                      .filter(([, v]) => v > 0)
+                      .map(([size, qty]) => (
+                        <span
+                          key={size}
+                          className="text-xs px-2 py-0.5 rounded-full"
+                          style={{
+                            background: "oklch(var(--primary) / 0.12)",
+                            color: "oklch(var(--primary))",
+                          }}
+                        >
+                          {size}: {qty}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Color Form (inline) */}
+          {showColorForm && (
+            <div
+              className="rounded-lg border p-3 space-y-3"
+              style={{
+                background: "oklch(var(--card))",
+                borderColor: "oklch(var(--primary) / 0.4)",
+              }}
+            >
+              <p
+                className="font-semibold text-xs"
+                style={{ color: "oklch(var(--primary))" }}
+              >
+                {editColorIndex !== null ? "Edit Color" : "Add Color"}
+              </p>
+              <div>
+                <Label className="text-xs">Color Name *</Label>
+                <Input
+                  value={newColorName}
+                  onChange={(e) => setNewColorName(e.target.value)}
+                  placeholder="e.g. Black, Blue, Red"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-xs mb-2 block">Size-wise Quantity</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ALL_SIZES.map((size) => (
+                    <div key={size}>
+                      <label
+                        htmlFor={`color-size-${size}`}
+                        className="text-xs font-medium"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        {size}
+                      </label>
+                      <Input
+                        id={`color-size-${size}`}
+                        type="number"
+                        value={newColorSizes[size] || ""}
+                        onChange={(e) =>
+                          setNewColorSizes((s) => ({
+                            ...s,
+                            [size]: e.target.value,
+                          }))
+                        }
+                        placeholder="0"
+                        className="text-sm"
+                        min="0"
+                      />
                     </div>
                   ))}
                 </div>
               </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={saveColorEntry}
+                  className="flex-1"
+                >
+                  {editColorIndex !== null ? "Update Color" : "Add Color"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowColorForm(false);
+                    setEditColorIndex(null);
+                    setNewColorName("");
+                    setNewColorSizes({});
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Additional Work */}
+          <div>
+            <Label className="block mb-2">Additional Work Required?</Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({ ...f, hasAdditionalWork: true }))
+                }
+                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                style={{
+                  background: form.hasAdditionalWork
+                    ? "oklch(var(--primary))"
+                    : "transparent",
+                  color: form.hasAdditionalWork
+                    ? "oklch(var(--primary-foreground))"
+                    : "oklch(var(--foreground))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setForm((f) => ({
+                    ...f,
+                    hasAdditionalWork: false,
+                    selectedWorkTypes: [],
+                  }))
+                }
+                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                style={{
+                  background: !form.hasAdditionalWork
+                    ? "oklch(var(--primary))"
+                    : "transparent",
+                  color: !form.hasAdditionalWork
+                    ? "oklch(var(--primary-foreground))"
+                    : "oklch(var(--foreground))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                No
+              </button>
+            </div>
+          </div>
+
+          {/* Work Types Selection */}
+          {form.hasAdditionalWork && (
+            <div>
+              <Label className="block mb-2">Work Types</Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {PREDEFINED_WORK_TYPES.map((wt) => (
+                  <button
+                    key={wt}
+                    type="button"
+                    onClick={() => toggleWorkType(wt)}
+                    className="px-3 py-1 rounded-full text-xs font-medium border transition-colors"
+                    style={{
+                      background: form.selectedWorkTypes.includes(wt)
+                        ? "oklch(var(--primary))"
+                        : "transparent",
+                      color: form.selectedWorkTypes.includes(wt)
+                        ? "oklch(var(--primary-foreground))"
+                        : "oklch(var(--foreground))",
+                      borderColor: "oklch(var(--border))",
+                    }}
+                  >
+                    {wt}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  value={form.customWorkType}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, customWorkType: e.target.value }))
+                  }
+                  placeholder="Custom work type..."
+                  className="text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomWorkType();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addCustomWorkType}
+                >
+                  Add
+                </Button>
+              </div>
+              {form.selectedWorkTypes.length > 0 && (
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  Selected: {form.selectedWorkTypes.join(", ")}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ===== WORK TYPE RATES SECTION ===== */}
+          <div
+            className="rounded-xl border p-3 space-y-3"
+            style={{
+              background: "oklch(var(--primary) / 0.04)",
+              borderColor: "oklch(var(--primary) / 0.2)",
+            }}
+          >
+            <p
+              className="font-semibold text-sm"
+              style={{ color: "oklch(var(--primary))" }}
+            >
+              Work Type Rates (₹ per PCS)
+            </p>
+            <p
+              className="text-xs"
+              style={{ color: "oklch(var(--muted-foreground))" }}
+            >
+              Define rates once here. They will auto-fill when selecting this
+              article in Tailor and Additional Work tabs.
+            </p>
+
+            {/* Always show Tailor Rate */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Tailor Stitching Rate</Label>
+                <div className="relative">
+                  <span
+                    className="absolute left-2 top-1/2 -translate-y-1/2 text-sm"
+                    style={{ color: "oklch(var(--muted-foreground))" }}
+                  >
+                    ₹
+                  </span>
+                  <Input
+                    data-ocid="item_master.tailor_rate_input"
+                    type="number"
+                    value={rates.tailorRate || ""}
+                    onChange={(e) =>
+                      setRates((r) => ({
+                        ...r,
+                        tailorRate: Number.parseFloat(e.target.value) || 0,
+                      }))
+                    }
+                    placeholder="0"
+                    className="pl-6 text-sm"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              {/* Show predefined work type rates */}
+              {PREDEFINED_WORK_TYPES.filter(
+                (wt) => wt !== "Tailor Stitching",
+              ).map((wt) => (
+                <div key={wt}>
+                  <Label className="text-xs">{wt} Rate</Label>
+                  <div className="relative">
+                    <span
+                      className="absolute left-2 top-1/2 -translate-y-1/2 text-sm"
+                      style={{ color: "oklch(var(--muted-foreground))" }}
+                    >
+                      ₹
+                    </span>
+                    <Input
+                      type="number"
+                      value={getRateForWT(wt)}
+                      onChange={(e) => setRateForWT(wt, e.target.value)}
+                      placeholder="0"
+                      className="pl-6 text-sm"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {/* Custom work types selected */}
+              {workTypesNeedingRates
+                .filter((wt) => !PREDEFINED_WORK_TYPES.includes(wt))
+                .map((wt) => (
+                  <div key={wt}>
+                    <Label className="text-xs">{wt} Rate</Label>
+                    <div className="relative">
+                      <span
+                        className="absolute left-2 top-1/2 -translate-y-1/2 text-sm"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        ₹
+                      </span>
+                      <Input
+                        type="number"
+                        value={getRateForWT(wt)}
+                        onChange={(e) => setRateForWT(wt, e.target.value)}
+                        placeholder="0"
+                        className="pl-6 text-sm"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              data-ocid="item_master.save_button"
+              onClick={handleSave}
+              disabled={loading}
+              className="flex-1"
+            >
+              {loading
+                ? "Saving..."
+                : editId !== null
+                  ? "Update Item"
+                  : "Save Item"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowForm(false);
+                setShowColorForm(false);
+                setForm(emptyForm());
+                setRates(emptyRates());
+                setEditId(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
+
+      {/* Items List */}
+      <div className="space-y-3">
+        {items.length === 0 && (
+          <div
+            data-ocid="item_master.empty_state"
+            className="text-center py-8"
+            style={{ color: "oklch(var(--muted-foreground))" }}
+          >
+            No items yet. Create your first item.
+          </div>
+        )}
+        {items.map((item, idx) => {
+          const colorEntries = parseColorSizeData(item.colorSizeData);
+          const savedRates = getItemRates(item.articleNo);
+          return (
+            <div
+              key={Number(item.id)}
+              data-ocid={`item_master.item.${idx + 1}`}
+              className="rounded-xl border p-3 space-y-2"
+              style={{
+                background: "oklch(var(--card))",
+                borderColor: "oklch(var(--border))",
+              }}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p
+                    className="font-bold"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    {item.articleNo}
+                  </p>
+                  <p
+                    className="text-sm"
+                    style={{ color: "oklch(var(--muted-foreground))" }}
+                  >
+                    Total Qty: {item.totalQuantity}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    data-ocid={`item_master.edit_button.${idx + 1}`}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEdit(item)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    data-ocid={`item_master.delete_button.${idx + 1}`}
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(item.id)}
+                  >
+                    Del
+                  </Button>
+                </div>
+              </div>
+
+              {/* Color-wise breakdown */}
+              {colorEntries.length > 0 ? (
+                <div className="space-y-1">
+                  {colorEntries.map((ce) => (
+                    <div key={ce.color}>
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        {ce.color}:
+                      </span>
+                      <span className="ml-1 flex flex-wrap gap-1 inline-flex">
+                        {Object.entries(ce.sizes)
+                          .filter(([, v]) => v > 0)
+                          .map(([size, qty]) => (
+                            <span
+                              key={size}
+                              className="text-xs px-1.5 py-0.5 rounded-full"
+                              style={{
+                                background: "oklch(var(--muted))",
+                                color: "oklch(var(--muted-foreground))",
+                              }}
+                            >
+                              {size}:{qty}
+                            </span>
+                          ))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {ALL_SIZES.map((s) => {
+                    const val = item[SIZE_KEYS[s]] as number;
+                    if (!val || val === 0) return null;
+                    return (
+                      <span
+                        key={s}
+                        className="text-xs px-2 py-0.5 rounded-full"
+                        style={{
+                          background: "oklch(var(--muted))",
+                          color: "oklch(var(--muted-foreground))",
+                        }}
+                      >
+                        {s}: {val}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {item.hasAdditionalWork && item.workTypes && (
+                <p
+                  className="text-xs"
+                  style={{ color: "oklch(var(--primary))" }}
+                >
+                  Work: {item.workTypes}
+                </p>
+              )}
+
+              {/* Rates summary */}
+              {(savedRates.tailorRate > 0 ||
+                savedRates.overlockRate > 0 ||
+                savedRates.foldingRate > 0 ||
+                savedRates.pressRate > 0 ||
+                savedRates.packingRate > 0 ||
+                savedRates.threadCuttingRate > 0 ||
+                Object.keys(savedRates.customRates).length > 0) && (
+                <div
+                  className="rounded-lg p-2"
+                  style={{ background: "oklch(var(--muted) / 0.5)" }}
+                >
+                  <p
+                    className="text-xs font-semibold mb-1"
+                    style={{ color: "oklch(var(--muted-foreground))" }}
+                  >
+                    Rates:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {savedRates.tailorRate > 0 && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        Tailor: ₹{savedRates.tailorRate}
+                      </span>
+                    )}
+                    {savedRates.overlockRate > 0 && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        Overlock: ₹{savedRates.overlockRate}
+                      </span>
+                    )}
+                    {savedRates.foldingRate > 0 && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        Folding: ₹{savedRates.foldingRate}
+                      </span>
+                    )}
+                    {savedRates.pressRate > 0 && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        Press: ₹{savedRates.pressRate}
+                      </span>
+                    )}
+                    {savedRates.packingRate > 0 && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        Packing: ₹{savedRates.packingRate}
+                      </span>
+                    )}
+                    {savedRates.threadCuttingRate > 0 && (
+                      <span
+                        className="text-xs"
+                        style={{ color: "oklch(var(--foreground))" }}
+                      >
+                        Thread: ₹{savedRates.threadCuttingRate}
+                      </span>
+                    )}
+                    {Object.entries(savedRates.customRates).map(([k, v]) =>
+                      v > 0 ? (
+                        <span
+                          key={k}
+                          className="text-xs"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          {k}: ₹{v}
+                        </span>
+                      ) : null,
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

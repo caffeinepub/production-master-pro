@@ -14,7 +14,7 @@ export function useGetRecords() {
     queryKey: ["records"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getRecords();
+      return actor.getProductionRecords();
     },
     enabled: !!actor && !isFetching,
   });
@@ -72,7 +72,7 @@ export function useAddRecord() {
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
-      return actor.addRecord(
+      return actor.addProductionRecord(
         params.date,
         params.articleNo,
         params.masterName,
@@ -99,7 +99,7 @@ export function useDeleteRecord() {
   return useMutation({
     mutationFn: async (id: bigint) => {
       if (!actor) throw new Error("Not connected");
-      return actor.deleteRecord(id);
+      return actor.deleteProductionRecord(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["records"] });
@@ -143,22 +143,20 @@ export function useAddTailorRecord() {
       date: string;
       articleNo: string;
       tailorName: string;
-      color: string;
-      size: string;
-      quantity: number;
-      pcsRate: number;
-      finalAmount: number;
+      pcsGiven: number;
+      tailorRate: number;
+      tailorAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
       return actor.addTailorRecord(
         params.date,
         params.articleNo,
         params.tailorName,
-        params.color,
-        params.size,
-        Number.parseFloat(String(params.quantity)),
-        Number.parseFloat(String(params.pcsRate)),
-        Number.parseFloat(String(params.finalAmount)),
+        Number.parseFloat(String(params.pcsGiven)),
+        Number.parseFloat(String(params.tailorRate)),
+        Number.parseFloat(String(params.tailorAmount)),
+        "",
+        "",
       );
     },
     onSuccess: () => {
@@ -285,11 +283,11 @@ export function useGetItemMasterByArticle(articleNo: string) {
 
 export function useGetArticleRemainingBySize(articleNo: string) {
   const { actor, isFetching } = useActor();
-  return useQuery<[number, number, number, number, number] | null>({
+  return useQuery<number | null>({
     queryKey: ["articleRemaining", articleNo],
     queryFn: async () => {
       if (!actor || !articleNo) return null;
-      return actor.getArticleRemainingBySize(articleNo);
+      return actor.getArticleRemainingQty(articleNo);
     },
     enabled: !!actor && !isFetching && !!articleNo,
   });
@@ -324,11 +322,19 @@ export function useAddItemMaster() {
       return actor.addItemMaster(
         params.articleNo,
         params.totalQuantity,
-        params.sizeS,
-        params.sizeM,
-        params.sizeL,
-        params.sizeXL,
-        params.sizeXXL,
+        "",
+        false,
+        "",
+        0,
+        params.sizeS ?? 0,
+        params.sizeM ?? 0,
+        params.sizeL ?? 0,
+        params.sizeXL ?? 0,
+        params.sizeXXL ?? 0,
+        0,
+        0,
+        0,
+        "",
       );
     },
     onSuccess: () => {
@@ -356,11 +362,19 @@ export function useUpdateItemMaster() {
         params.id,
         params.articleNo,
         params.totalQuantity,
-        params.sizeS,
-        params.sizeM,
-        params.sizeL,
-        params.sizeXL,
-        params.sizeXXL,
+        "",
+        false,
+        "",
+        0,
+        params.sizeS ?? 0,
+        params.sizeM ?? 0,
+        params.sizeL ?? 0,
+        params.sizeXL ?? 0,
+        params.sizeXXL ?? 0,
+        0,
+        0,
+        0,
+        "",
       );
     },
     onSuccess: () => {
@@ -413,12 +427,14 @@ export function useAddDispatchRecord() {
     }) => {
       if (!actor) throw new Error("Not connected");
       return actor.addDispatchRecord(
-        params.date,
         params.articleNo,
+        "",
+        params.date,
         params.dispatchQuantity,
         params.salePrice,
         params.percentage,
-        params.finalPayment,
+        "",
+        "",
       );
     },
     onSuccess: () => {
@@ -444,12 +460,14 @@ export function useUpdateDispatchRecord() {
       if (!actor) throw new Error("Not connected");
       return actor.updateDispatchRecord(
         params.id,
-        params.date,
         params.articleNo,
+        "",
+        params.date,
         params.dispatchQuantity,
         params.salePrice,
         params.percentage,
-        params.finalPayment,
+        "",
+        "",
       );
     },
     onSuccess: () => {

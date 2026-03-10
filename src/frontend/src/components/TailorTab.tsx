@@ -1,1580 +1,1098 @@
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertTriangle,
-  CalendarRange,
-  ChevronDown,
-  ChevronUp,
-  Info,
-  LayoutList,
-  Loader2,
-  MessageCircle,
-  Pencil,
-  RotateCcw,
-  Save,
-  Scissors,
-  Trash2,
-  TrendingUp,
-  Users,
-} from "lucide-react";
-import { useCallback, useState } from "react";
+import { ChevronDown, ChevronUp, FileDown } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { TailorRecord } from "../backend";
-import {
-  useAddTailorRecord,
-  useDeleteTailorRecord,
-  useGetArticleRemainingBySize,
-  useGetItemMasterByArticle,
-  useGetTailorRecords,
-  useGetTailorReport,
-} from "../hooks/useQueries";
+import type {
+  AdditionalWorkRecord,
+  ItemMaster,
+  TailorRecord,
+} from "../backend";
+import { useActor } from "../hooks/useActor";
+import { loadArticleRates } from "../utils/articleRates";
+import { exportTailorPdf } from "../utils/pdfExport";
 import { SearchableDropdown } from "./SearchableDropdown";
 
-type SubTab = "add" | "view";
-type ViewMode = "all" | "artwise";
+interface ColorEntry {
+  color: string;
+  sizes: Record<string, number>;
+}
+
+function parseColorSizeData(raw: string): ColorEntry[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(
+      (e: { color: string; sizes: Record<string, number> }) => ({
+        color: e.color || "",
+        sizes: e.sizes || {},
+      }),
+    );
+  } catch {
+    return [];
+  }
+}
 
 interface FormState {
-  date: string;
   articleNo: string;
-  tailorName: string;
   color: string;
   size: string;
-  quantity: string;
-  pcsRate: string;
-  whatsappNo: string;
-}
-
-interface FormErrors {
-  date?: string;
-  articleNo?: string;
-  tailorName?: string;
-  color?: string;
-  size?: string;
-  quantity?: string;
-  pcsRate?: string;
-}
-
-interface EditFormState {
-  date: string;
-  articleNo: string;
   tailorName: string;
-  color: string;
-  size: string;
-  quantity: string;
-  pcsRate: string;
+  pcsGiven: string;
+  tailorRate: string;
+  date: string;
 }
 
-function shareOnWhatsApp(
-  phone: string,
-  name: string,
-  totalQty: number,
-  totalAmount: number,
-  dateFrom: string,
-  dateTo: string,
-  articleBreakdown: Array<{ articleNo: string; qty: number; amount: number }>,
-) {
-  const period =
-    dateFrom && dateTo
-      ? `${dateFrom} to ${dateTo}`
-      : dateFrom || dateTo || "All time";
+const today = () => new Date().toISOString().slice(0, 10);
 
-  let breakdownText = "";
-  if (articleBreakdown.length > 0) {
-    breakdownText = `\n\n*Article Wise Details:*\n${articleBreakdown
-      .map(
-        (a) =>
-          `• ${a.articleNo}: ${a.qty.toLocaleString()} pcs — ₨ ${a.amount.toFixed(2)}`,
-      )
-      .join("\n")}`;
-  }
-
-  const msg = `*Production Master Pro*\n\nDear ${name},\n\nYour payment summary:\n\n📅 Period: ${period}\n✂️ Total Pieces: ${totalQty.toLocaleString()} pcs\n💰 Total Amount: ₨ ${totalAmount.toFixed(2)}${breakdownText}\n\nThank you for your work!`;
-  const clean = phone.replace(/\D/g, "");
-  const url = clean
-    ? `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`
-    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-  window.open(url, "_blank");
-}
-
-function getTodayDate() {
-  return new Date().toISOString().split("T")[0];
-}
-
-const INITIAL_FORM: FormState = {
-  date: getTodayDate(),
+const emptyForm = (): FormState => ({
   articleNo: "",
-  tailorName: "",
   color: "",
   size: "",
-  quantity: "",
-  pcsRate: "",
-  whatsappNo: "",
-};
+  tailorName: "",
+  pcsGiven: "",
+  tailorRate: "",
+  date: today(),
+});
 
 export function TailorTab() {
-  const [subTab, setSubTab] = useState<SubTab>("add");
-  const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [form, setForm] = useState<FormState>(INITIAL_FORM);
-  const [errors, setErrors] = useState<FormErrors>({});
+  const { actor } = useActor();
+  const [records, setRecords] = useState<TailorRecord[]>([]);
+  const [items, setItems] = useState<ItemMaster[]>([]);
+  const [addWorkRecords, setAddWorkRecords] = useState<AdditionalWorkRecord[]>(
+    [],
+  );
+  const [form, setForm] = useState<FormState>(emptyForm());
+  const [editId, setEditId] = useState<bigint | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [filterDate, setFilterDate] = useState(today());
+  const [showAllRecords, setShowAllRecords] = useState(false);
+  const [showArticleBreakdown, setShowArticleBreakdown] = useState(false);
+  const [filterArticle, setFilterArticle] = useState("");
+  const [showPdfMenu, setShowPdfMenu] = useState(false);
 
-  // Article-wise expanded state (keyed by articleNo)
-  const [expandedArticles, setExpandedArticles] = useState<
-    Record<string, boolean>
-  >({});
+  const tailorAmount =
+    (Number.parseFloat(form.pcsGiven) || 0) *
+    (Number.parseFloat(form.tailorRate) || 0);
 
-  // Edit dialog state
-  const [editingRecord, setEditingRecord] = useState<TailorRecord | null>(null);
-  const [editForm, setEditForm] = useState<EditFormState>({
-    date: "",
-    articleNo: "",
-    tailorName: "",
-    color: "",
-    size: "",
-    quantity: "",
-    pcsRate: "",
-  });
-  const [editSaving, setEditSaving] = useState(false);
+  const loadData = async () => {
+    if (!actor) return;
+    const [recs, itemList, awRecs] = await Promise.all([
+      actor.getTailorRecords().catch(() => []),
+      actor.getItemMasters().catch(() => []),
+      actor.getAdditionalWorkRecords().catch(() => []),
+    ]);
+    setRecords(recs as typeof recs);
+    setItems(itemList as typeof itemList);
+    setAddWorkRecords(awRecs as typeof awRecs);
+  };
 
-  // View filters
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [articleFilter, setArticleFilter] = useState("");
-  const [summaryExpanded, setSummaryExpanded] = useState(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
+  useEffect(() => {
+    loadData();
+  }, [actor]);
 
-  // Store WhatsApp numbers per tailor name
-  const [tailorWhatsapp, setTailorWhatsapp] = useState<Record<string, string>>(
-    () => {
-      try {
-        return JSON.parse(localStorage.getItem("tailorWhatsapp") || "{}");
-      } catch {
-        return {};
+  // Auto-fill tailor rate from Item Master rates when articleNo changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (form.articleNo && editId === null) {
+      const rates = loadArticleRates(form.articleNo);
+      if (rates.tailorRate > 0) {
+        setForm((f) => ({ ...f, tailorRate: String(rates.tailorRate) }));
       }
-    },
+    }
+  }, [form.articleNo]);
+
+  // Derived: color entries for selected article
+  const selectedArticleColorEntries = useMemo(() => {
+    const item = items.find((i) => i.articleNo === form.articleNo);
+    if (!item) return [];
+    return parseColorSizeData(item.colorSizeData);
+  }, [items, form.articleNo]);
+
+  // Available colors for selected article
+  const availableColors = useMemo(
+    () => selectedArticleColorEntries.map((ce) => ce.color),
+    [selectedArticleColorEntries],
   );
 
-  const saveTailorWhatsapp = (name: string, phone: string) => {
-    const updated = { ...tailorWhatsapp, [name]: phone };
-    setTailorWhatsapp(updated);
-    localStorage.setItem("tailorWhatsapp", JSON.stringify(updated));
-  };
+  // Available sizes for selected color
+  const availableSizes = useMemo(() => {
+    if (!form.color) return [];
+    const ce = selectedArticleColorEntries.find((c) => c.color === form.color);
+    if (!ce) return [];
+    return Object.entries(ce.sizes)
+      .filter(([, qty]) => qty > 0)
+      .map(([size]) => size);
+  }, [selectedArticleColorEntries, form.color]);
 
-  const { data: records = [], isLoading: recordsLoading } =
-    useGetTailorRecords();
-  const { data: report = [] } = useGetTailorReport();
-  const addRecord = useAddTailorRecord();
-  const deleteRecord = useDeleteTailorRecord();
-
-  // Item Master based cutting stats
-  const { data: selectedItemMaster } = useGetItemMasterByArticle(
-    form.articleNo,
-  );
-  const { data: remainingBySizeData } = useGetArticleRemainingBySize(
-    form.articleNo,
-  );
-
-  // Map size label to remaining quantity index: S=0, M=1, L=2, XL=3, XXL=4
-  const SIZE_INDEX: Record<string, number> = {
-    S: 0,
-    M: 1,
-    L: 2,
-    XL: 3,
-    XXL: 4,
-  };
-  const sizeUpperCase = form.size.toUpperCase();
-  const selectedSizeIdx = SIZE_INDEX[sizeUpperCase] ?? -1;
-  const remainingForSelectedSize =
-    remainingBySizeData !== null &&
-    remainingBySizeData !== undefined &&
-    selectedSizeIdx >= 0
-      ? remainingBySizeData[selectedSizeIdx]
-      : null;
-
-  // For banner: total remaining (sum all sizes)
-  const totalRemaining =
-    remainingBySizeData !== null && remainingBySizeData !== undefined
-      ? remainingBySizeData.reduce((a, b) => a + b, 0)
-      : null;
-  const articleExistsInItemMaster = !!selectedItemMaster;
-
-  const finalAmount =
-    (Number(form.quantity) || 0) * (Number(form.pcsRate) || 0);
-  const editFinalAmount =
-    (Number(editForm.quantity) || 0) * (Number(editForm.pcsRate) || 0);
-
-  const handleChange = useCallback(
-    (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
-    },
-    [],
-  );
-
-  const handleEditChange = useCallback(
-    (field: keyof EditFormState) =>
-      (e: React.ChangeEvent<HTMLInputElement>) => {
-        setEditForm((prev) => ({ ...prev, [field]: e.target.value }));
-      },
-    [],
-  );
-
-  const validate = (): boolean => {
-    const newErrors: FormErrors = {};
-    if (!form.date) newErrors.date = "Date is required";
-    if (!form.articleNo.trim()) newErrors.articleNo = "Article No. is required";
-    if (!form.tailorName.trim())
-      newErrors.tailorName = "Tailor Name is required";
-    if (!form.color.trim()) newErrors.color = "Color is required";
-    if (!form.size.trim()) newErrors.size = "Size is required";
-    if (
-      !form.quantity ||
-      Number.isNaN(Number(form.quantity)) ||
-      Number(form.quantity) <= 0
-    )
-      newErrors.quantity = "Enter valid quantity";
-    else if (
-      remainingForSelectedSize !== null &&
-      Number(form.quantity) > remainingForSelectedSize
-    )
-      newErrors.quantity =
-        "Entered quantity exceeds available production quantity.";
-    if (form.articleNo && !articleExistsInItemMaster)
-      newErrors.articleNo = "Please create this article first in Item Master.";
-    if (
-      !form.pcsRate ||
-      Number.isNaN(Number(form.pcsRate)) ||
-      Number(form.pcsRate) <= 0
-    )
-      newErrors.pcsRate = "Enter valid Pcs Rate";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+  // Cutting qty for selected color+size
+  const cuttingQtyForColorSize = useMemo(() => {
+    if (!form.color || !form.size) return 0;
+    const ce = selectedArticleColorEntries.find((c) => c.color === form.color);
+    return ce?.sizes[form.size] || 0;
+  }, [selectedArticleColorEntries, form.color, form.size]);
 
   const handleSave = async () => {
-    if (!validate()) return;
-    const qty = Number(form.quantity);
-    const rate = Number(form.pcsRate);
-    const amt = qty * rate;
-    try {
-      await addRecord.mutateAsync({
-        date: form.date,
-        articleNo: form.articleNo.trim(),
-        tailorName: form.tailorName.trim(),
-        color: form.color.trim(),
-        size: form.size.trim(),
-        quantity: qty,
-        pcsRate: rate,
-        finalAmount: amt,
-      });
-      toast.success("Tailor record saved!", {
-        description: `${form.tailorName} — ₨ ${amt.toFixed(2)}`,
-      });
-      const savedWhatsapp = form.whatsappNo;
-      handleClear();
-      setForm((prev) => ({ ...prev, whatsappNo: savedWhatsapp }));
-    } catch (err) {
-      console.error("Save tailor record error:", err);
-      toast.error("Failed to save tailor record. Please try again.");
-    }
-  };
-
-  const handleClear = () => {
-    setForm({ ...INITIAL_FORM, date: getTodayDate() });
-    setErrors({});
-  };
-
-  const handleDelete = async (id: bigint, name: string) => {
-    try {
-      await deleteRecord.mutateAsync(id);
-      toast.success(`Record for ${name} deleted.`);
-    } catch {
-      toast.error("Failed to delete record.");
-    }
-  };
-
-  const openEditDialog = (record: TailorRecord) => {
-    setEditingRecord(record);
-    setEditForm({
-      date: record.date,
-      articleNo: record.articleNo,
-      tailorName: record.tailorName,
-      color: record.color,
-      size: record.size,
-      quantity: String(record.quantity),
-      pcsRate: String(record.pcsRate),
-    });
-  };
-
-  const handleEditSave = async () => {
-    if (!editingRecord) return;
-    const qty = Number(editForm.quantity);
-    const rate = Number(editForm.pcsRate);
-    if (
-      !editForm.date ||
-      !editForm.articleNo.trim() ||
-      !editForm.tailorName.trim() ||
-      !editForm.color.trim() ||
-      !editForm.size.trim() ||
-      qty <= 0 ||
-      rate <= 0
-    ) {
-      toast.error("Please fill all required fields correctly.");
+    if (!actor) {
+      toast.error("Not connected");
       return;
     }
-    const amt = qty * rate;
-    setEditSaving(true);
+    if (!form.articleNo.trim()) {
+      toast.error("Article Number required");
+      return;
+    }
+    if (!form.color) {
+      toast.error("Color is required");
+      return;
+    }
+    if (!form.size) {
+      toast.error("Size is required");
+      return;
+    }
+    if (!form.tailorName.trim()) {
+      toast.error("Tailor Name required");
+      return;
+    }
+    const pcs = Number.parseFloat(form.pcsGiven) || 0;
+    if (pcs <= 0) {
+      toast.error("PCS must be greater than 0");
+      return;
+    }
+    const rate = Number.parseFloat(form.tailorRate) || 0;
+
+    setLoading(true);
     try {
-      await deleteRecord.mutateAsync(editingRecord.id);
-      await addRecord.mutateAsync({
-        date: editForm.date,
-        articleNo: editForm.articleNo.trim(),
-        tailorName: editForm.tailorName.trim(),
-        color: editForm.color.trim(),
-        size: editForm.size.trim(),
-        quantity: qty,
-        pcsRate: rate,
-        finalAmount: amt,
-      });
-      toast.success("Record updated successfully");
-      setEditingRecord(null);
-    } catch (err) {
-      console.error("Edit tailor record error:", err);
-      toast.error("Failed to update record");
+      // Get already stitched qty for this color+size from backend
+      const alreadyStitched = await actor.getStitchedQtyByColorSize(
+        form.articleNo,
+        form.color,
+        form.size,
+      );
+
+      // If editing, subtract current record's pcsGiven from existing stitched qty
+      let effectiveStitched = alreadyStitched;
+      if (editId !== null) {
+        const currentRec = records.find((r) => r.id === editId);
+        if (currentRec) {
+          effectiveStitched = Math.max(
+            0,
+            alreadyStitched - currentRec.pcsGiven,
+          );
+        }
+      }
+
+      if (effectiveStitched + pcs > cuttingQtyForColorSize) {
+        toast.error(
+          "Error: Work quantity cannot exceed cutting quantity for this color and size.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      const amount = pcs * rate;
+      if (editId !== null) {
+        await actor.updateTailorRecord(
+          editId,
+          form.date,
+          form.articleNo,
+          form.tailorName,
+          pcs,
+          rate,
+          amount,
+          form.color,
+          form.size,
+        );
+        toast.success("Record updated");
+      } else {
+        await actor.addTailorRecord(
+          form.date,
+          form.articleNo,
+          form.tailorName,
+          pcs,
+          rate,
+          amount,
+          form.color,
+          form.size,
+        );
+        toast.success("Record saved");
+      }
+      setForm(emptyForm());
+      setEditId(null);
+      setShowForm(false);
+      await loadData();
+    } catch {
+      toast.error("Failed to save tailor record");
     } finally {
-      setEditSaving(false);
+      setLoading(false);
     }
   };
 
-  const toggleArticle = (articleNo: string) => {
-    setExpandedArticles((prev) => ({ ...prev, [articleNo]: !prev[articleNo] }));
+  const handleEdit = (r: TailorRecord) => {
+    setForm({
+      articleNo: r.articleNo,
+      color: r.color || "",
+      size: r.size || "",
+      tailorName: r.tailorName,
+      pcsGiven: String(r.pcsGiven),
+      tailorRate: String(r.tailorRate),
+      date: r.date,
+    });
+    setEditId(r.id);
+    setShowForm(true);
   };
 
-  // Filter records
-  const filteredRecords = records.filter((r) => {
-    if (dateFrom && r.date < dateFrom) return false;
-    if (dateTo && r.date > dateTo) return false;
-    if (
-      articleFilter &&
-      !r.articleNo.toLowerCase().includes(articleFilter.toLowerCase())
-    )
-      return false;
-    return true;
-  });
-
-  // Group records by articleNo for article-wise view
-  const articleGroups = filteredRecords.reduce<Record<string, TailorRecord[]>>(
-    (acc, r) => {
-      if (!acc[r.articleNo]) acc[r.articleNo] = [];
-      acc[r.articleNo].push(r);
-      return acc;
-    },
-    {},
-  );
-  const sortedArticleKeys = Object.keys(articleGroups).sort((a, b) =>
-    a.localeCompare(b),
-  );
-
-  const filteredReport = report.filter(([name]) => {
-    if (dateFrom || dateTo || articleFilter) {
-      const namesInFiltered = new Set(filteredRecords.map((r) => r.tailorName));
-      return namesInFiltered.has(name);
+  const handleDelete = async (id: bigint) => {
+    if (!actor) return;
+    if (!confirm("Delete this record?")) return;
+    try {
+      await actor.deleteTailorRecord(id);
+      toast.success("Deleted");
+      await loadData();
+    } catch {
+      toast.error("Failed to delete");
     }
-    return true;
-  });
+  };
 
-  // Shared record card renderer
-  const renderRecordCard = (record: TailorRecord, idx: number) => (
-    <div
-      key={String(record.id)}
-      data-ocid={`tailor.record.item.${idx + 1}`}
-      className="rounded-lg border overflow-hidden"
-      style={{
-        borderColor: "oklch(var(--border))",
-        background: "oklch(var(--card))",
-      }}
-    >
-      {/* Card Header */}
-      <div
-        className="px-4 py-2.5 flex items-center justify-between border-b"
-        style={{
-          borderColor: "oklch(var(--border))",
-          background: "oklch(var(--muted))",
-        }}
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span
-            className="font-bold text-sm truncate"
-            style={{
-              fontFamily: "Cabinet Grotesk, sans-serif",
-              color: "oklch(var(--foreground))",
-            }}
-          >
-            {record.tailorName}
-          </span>
-          <span
-            className="text-xs px-2 py-0.5 rounded-full shrink-0"
-            style={{
-              background: "oklch(var(--primary) / 0.12)",
-              color: "oklch(var(--primary))",
-              fontFamily: "Cabinet Grotesk, sans-serif",
-              fontWeight: 600,
-            }}
-          >
-            {record.articleNo}
-          </span>
-        </div>
-        <div className="flex items-center gap-1 ml-2 shrink-0">
-          <Button
-            size="sm"
-            variant="ghost"
-            data-ocid={`tailor.record.edit_button.${idx + 1}`}
-            onClick={() => openEditDialog(record)}
-            className="h-7 w-7 p-0"
-            style={{ color: "oklch(var(--primary))" }}
-            title="Edit record"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-ocid={`tailor.record.delete_button.${idx + 1}`}
-            onClick={() => handleDelete(record.id, record.tailorName)}
-            disabled={deleteRecord.isPending}
-            className="h-7 w-7 p-0"
-            style={{ color: "oklch(var(--destructive))" }}
-            title="Delete record"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Card Body */}
-      <div className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
-        <div>
-          <div className="data-label">Date</div>
-          <div className="data-value text-sm">{record.date}</div>
-        </div>
-        <div>
-          <div className="data-label">Color</div>
-          <div className="data-value text-sm">{record.color || "—"}</div>
-        </div>
-        <div>
-          <div className="data-label">Size</div>
-          <div className="data-value text-sm">{record.size || "—"}</div>
-        </div>
-        <div>
-          <div className="data-label">Quantity</div>
-          <div className="data-value text-sm">
-            {record.quantity.toLocaleString()} pcs
-          </div>
-        </div>
-        <div>
-          <div className="data-label">Pcs Rate</div>
-          <div className="data-value text-sm">
-            ₨ {record.pcsRate.toFixed(2)}
-          </div>
-        </div>
-      </div>
-      <div
-        className="px-4 py-2.5 flex items-center justify-between border-t"
-        style={{
-          borderColor: "oklch(var(--border))",
-          background: "oklch(var(--success) / 0.05)",
-        }}
-      >
-        <span className="data-label">Final Amount</span>
-        <span
-          className="font-bold text-base"
-          style={{ color: "oklch(var(--success))" }}
-        >
-          ₨ {record.finalAmount.toFixed(2)}
-        </span>
-      </div>
-    </div>
+  // Date-filtered records
+  const dateFilteredRecords = useMemo(
+    () => records.filter((r) => r.date === filterDate),
+    [records, filterDate],
   );
+
+  // Summary banner for selected date
+  const dateSummary = useMemo(() => {
+    const totalPcs = dateFilteredRecords.reduce((s, r) => s + r.pcsGiven, 0);
+    const totalAmount = dateFilteredRecords.reduce(
+      (s, r) => s + r.tailorAmount,
+      0,
+    );
+    return { count: dateFilteredRecords.length, totalPcs, totalAmount };
+  }, [dateFilteredRecords]);
+
+  // Employee-wise grouping for the selected date
+  const employeeGroups = useMemo(() => {
+    const map = new Map<string, TailorRecord[]>();
+    for (const r of dateFilteredRecords) {
+      const list = map.get(r.tailorName) ?? [];
+      list.push(r);
+      map.set(r.tailorName, list);
+    }
+    return Array.from(map.entries()).map(([name, recs]) => {
+      const tailorTotal = recs.reduce((s, r) => s + r.tailorAmount, 0);
+      const tailorPcs = recs.reduce((s, r) => s + r.pcsGiven, 0);
+      const awForEmployee = addWorkRecords.filter(
+        (aw) => aw.employeeName === name && aw.date === filterDate,
+      );
+      const awTotal = awForEmployee.reduce((s, aw) => s + aw.totalAmount, 0);
+      return {
+        name,
+        recs,
+        tailorTotal,
+        tailorPcs,
+        awForEmployee,
+        awTotal,
+        netPayment: tailorTotal + awTotal,
+      };
+    });
+  }, [dateFilteredRecords, addWorkRecords, filterDate]);
+
+  // Article-wise breakdown (all time)
+  const articleBreakdown = useMemo(() => {
+    const map = new Map<string, Map<string, number>>();
+    for (const r of records) {
+      let tailorMap = map.get(r.articleNo);
+      if (!tailorMap) {
+        tailorMap = new Map();
+        map.set(r.articleNo, tailorMap);
+      }
+      tailorMap.set(
+        r.tailorName,
+        (tailorMap.get(r.tailorName) ?? 0) + r.pcsGiven,
+      );
+    }
+    return Array.from(map.entries()).map(([articleNo, tailors]) => ({
+      articleNo,
+      tailors: Array.from(tailors.entries()).map(([name, pcs]) => ({
+        name,
+        pcs,
+      })),
+    }));
+  }, [records]);
+
+  const filteredAll = filterArticle
+    ? records.filter((r) =>
+        r.articleNo.toLowerCase().includes(filterArticle.toLowerCase()),
+      )
+    : records;
+
+  // PDF export helpers
+  const handleExportDaily = () => {
+    setShowPdfMenu(false);
+    exportTailorPdf(
+      dateFilteredRecords.map((r) => ({
+        date: r.date,
+        employeeName: r.tailorName,
+        articleNo: r.articleNo,
+        color: r.color,
+        size: r.size,
+        pcsGiven: r.pcsGiven,
+        tailorRate: r.tailorRate,
+        tailorAmount: r.tailorAmount,
+      })),
+      "Tailor Daily Report",
+      `Date: ${filterDate}`,
+    );
+  };
+
+  const handleExportMonthly = () => {
+    setShowPdfMenu(false);
+    const month = filterDate.slice(0, 7);
+    const monthRecs = records.filter((r) => r.date.startsWith(month));
+    exportTailorPdf(
+      monthRecs.map((r) => ({
+        date: r.date,
+        employeeName: r.tailorName,
+        articleNo: r.articleNo,
+        color: r.color,
+        size: r.size,
+        pcsGiven: r.pcsGiven,
+        tailorRate: r.tailorRate,
+        tailorAmount: r.tailorAmount,
+      })),
+      "Tailor Monthly Report",
+      `Month: ${month}`,
+    );
+  };
+
+  const handleExportArticle = () => {
+    setShowPdfMenu(false);
+    const artRecs = filterArticle
+      ? records.filter((r) =>
+          r.articleNo.toLowerCase().includes(filterArticle.toLowerCase()),
+        )
+      : records;
+    exportTailorPdf(
+      artRecs.map((r) => ({
+        date: r.date,
+        employeeName: r.tailorName,
+        articleNo: r.articleNo,
+        color: r.color,
+        size: r.size,
+        pcsGiven: r.pcsGiven,
+        tailorRate: r.tailorRate,
+        tailorAmount: r.tailorAmount,
+      })),
+      "Tailor Article-wise Report",
+      filterArticle ? `Article: ${filterArticle}` : "All Articles",
+    );
+  };
 
   return (
-    <div className="px-4 py-4 space-y-4">
-      {/* Sub-tab Switcher */}
-      <div
-        className="flex rounded-lg overflow-hidden border"
-        style={{ borderColor: "oklch(var(--border))" }}
-      >
-        <button
-          type="button"
-          data-ocid="tailor.add_tab"
-          onClick={() => setSubTab("add")}
-          className="flex-1 py-2.5 text-sm font-semibold transition-colors"
-          style={{
-            background:
-              subTab === "add"
-                ? "oklch(var(--primary))"
-                : "oklch(var(--muted))",
-            color:
-              subTab === "add"
-                ? "oklch(var(--primary-foreground))"
-                : "oklch(var(--muted-foreground))",
-            fontFamily: "Cabinet Grotesk, sans-serif",
-          }}
+    <div className="p-4 pb-24 space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2
+          className="text-lg font-bold"
+          style={{ color: "oklch(var(--foreground))" }}
         >
-          <Scissors className="inline w-4 h-4 mr-1.5 mb-0.5" />
-          Add Record
-        </button>
-        <button
-          type="button"
-          data-ocid="tailor.view_tab"
-          onClick={() => setSubTab("view")}
-          className="flex-1 py-2.5 text-sm font-semibold transition-colors"
-          style={{
-            background:
-              subTab === "view"
-                ? "oklch(var(--primary))"
-                : "oklch(var(--muted))",
-            color:
-              subTab === "view"
-                ? "oklch(var(--primary-foreground))"
-                : "oklch(var(--muted-foreground))",
-            fontFamily: "Cabinet Grotesk, sans-serif",
-          }}
-        >
-          <Users className="inline w-4 h-4 mr-1.5 mb-0.5" />
-          View Records
-        </button>
+          Tailors
+        </h2>
+        <div className="flex gap-2">
+          {/* PDF Export button */}
+          <div className="relative">
+            <Button
+              data-ocid="tailor.pdf_button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPdfMenu((v) => !v)}
+            >
+              <FileDown className="w-4 h-4 mr-1" /> PDF
+            </Button>
+            {showPdfMenu && (
+              <div
+                className="absolute right-0 top-8 z-50 rounded-xl border shadow-lg overflow-hidden"
+                style={{
+                  background: "oklch(var(--card))",
+                  borderColor: "oklch(var(--border))",
+                  minWidth: "180px",
+                }}
+              >
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors"
+                  style={{ color: "oklch(var(--foreground))" }}
+                  onClick={handleExportDaily}
+                >
+                  Export Daily Report
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-t"
+                  style={{
+                    color: "oklch(var(--foreground))",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                  onClick={handleExportMonthly}
+                >
+                  Export Monthly Report
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-t"
+                  style={{
+                    color: "oklch(var(--foreground))",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                  onClick={handleExportArticle}
+                >
+                  Export Article-wise Report
+                </button>
+              </div>
+            )}
+          </div>
+          <Button
+            data-ocid="tailor.open_modal_button"
+            onClick={() => {
+              setForm(emptyForm());
+              setEditId(null);
+              setShowForm(!showForm);
+              setShowPdfMenu(false);
+            }}
+            size="sm"
+          >
+            + Add Record
+          </Button>
+        </div>
       </div>
 
-      {/* ─── ADD RECORD SUB-TAB ─────────────────────────────────── */}
-      {subTab === "add" && (
-        <div className="space-y-4">
-          {/* Live Result Card */}
-          <div
-            data-ocid="tailor.result_card"
-            className="rounded-lg border-2 overflow-hidden"
-            style={{
-              borderColor:
-                finalAmount > 0
-                  ? "oklch(var(--primary))"
-                  : "oklch(var(--border))",
-              background:
-                finalAmount > 0
-                  ? "oklch(var(--primary) / 0.06)"
-                  : "oklch(var(--muted))",
-              transition: "all 0.2s ease",
-            }}
-          >
-            <div
-              className="px-4 py-2.5 flex items-center gap-2 border-b"
-              style={{
-                borderColor:
-                  finalAmount > 0
-                    ? "oklch(var(--primary) / 0.2)"
-                    : "oklch(var(--border))",
-              }}
+      {/* Entry Form */}
+      {showForm && (
+        <div
+          className="rounded-xl border p-4 space-y-3"
+          style={{
+            background: "oklch(var(--card))",
+            borderColor: "oklch(var(--border))",
+          }}
+        >
+          <h3 className="font-semibold text-sm">
+            {editId !== null ? "Edit Record" : "New Tailor Record"}
+          </h3>
+
+          {/* Article */}
+          <div>
+            <Label>Article No *</Label>
+            <select
+              data-ocid="tailor.article_select"
+              className="input-factory w-full"
+              value={form.articleNo}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  articleNo: e.target.value,
+                  color: "",
+                  size: "",
+                }))
+              }
             >
-              <TrendingUp
-                className="w-4 h-4"
-                style={{
-                  color:
-                    finalAmount > 0
-                      ? "oklch(var(--primary))"
-                      : "oklch(var(--muted-foreground))",
-                }}
-              />
-              <span
-                className="data-label"
-                style={{
-                  color: finalAmount > 0 ? "oklch(var(--primary))" : undefined,
-                }}
-              >
-                Live Calculation
-              </span>
-            </div>
-            <div className="px-4 py-3 grid grid-cols-3 gap-3">
-              <div>
-                <div className="data-label mb-1">Quantity</div>
-                <div
-                  className="data-value"
-                  style={{
-                    color: form.quantity
-                      ? "oklch(var(--foreground))"
-                      : "oklch(var(--muted-foreground))",
-                  }}
-                >
-                  {form.quantity ? Number(form.quantity).toLocaleString() : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="data-label mb-1">Pcs Rate</div>
-                <div
-                  className="data-value"
-                  style={{
-                    color: form.pcsRate
-                      ? "oklch(var(--foreground))"
-                      : "oklch(var(--muted-foreground))",
-                  }}
-                >
-                  {form.pcsRate ? `₨ ${Number(form.pcsRate).toFixed(2)}` : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="data-label mb-1">Final Amount</div>
-                <div
-                  className="data-value"
-                  style={{
-                    color:
-                      finalAmount > 0
-                        ? "oklch(var(--success))"
-                        : "oklch(var(--muted-foreground))",
-                    fontSize: "1.05rem",
-                  }}
-                >
-                  {finalAmount > 0 ? `₨ ${finalAmount.toFixed(2)}` : "—"}
-                </div>
-              </div>
-            </div>
+              <option value="">Select article...</option>
+              {items.map((i) => (
+                <option key={i.articleNo} value={i.articleNo}>
+                  {i.articleNo}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Form Fields */}
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="tailor-date" className="data-label">
-                Date
-              </Label>
-              <Input
-                id="tailor-date"
-                data-ocid="tailor.date_input"
-                type="date"
-                value={form.date}
-                onChange={handleChange("date")}
-                className="input-factory"
-                style={
-                  errors.date
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
-              />
-              {errors.date && (
-                <p
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.date}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="tailor-article" className="data-label">
-                Article No.
-              </Label>
-              <SearchableDropdown
-                id="tailor-article"
-                data-ocid="tailor.article_input"
-                fieldKey="article_no"
-                placeholder="e.g. ART-2024-001"
-                value={form.articleNo}
-                onChange={(val) => {
-                  setForm((prev) => ({ ...prev, articleNo: val }));
-                  setErrors((prev) => ({ ...prev, articleNo: undefined }));
-                }}
-                hasError={!!errors.articleNo}
-              />
-              {errors.articleNo && (
-                <p
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.articleNo}
-                </p>
-              )}
-              {/* Item Master Status Banner */}
-              {form.articleNo && !articleExistsInItemMaster && (
-                <div
-                  data-ocid="tailor.article_not_found_error"
-                  className="rounded-lg p-3 mt-1 flex items-start gap-2"
-                  style={{
-                    background: "oklch(var(--destructive) / 0.08)",
-                    border: "1px solid oklch(var(--destructive) / 0.3)",
-                  }}
-                >
-                  <AlertTriangle
-                    className="w-4 h-4 mt-0.5 shrink-0"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  />
-                  <p
-                    className="text-xs font-medium"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  >
-                    Please create this article first in Item Master.
-                  </p>
-                </div>
-              )}
-              {articleExistsInItemMaster &&
-                remainingBySizeData !== null &&
-                remainingBySizeData !== undefined && (
-                  <div
-                    data-ocid="tailor.cutting_stats_panel"
-                    className="rounded-lg p-3 mt-1"
-                    style={{
-                      background:
-                        totalRemaining !== null && totalRemaining <= 0
-                          ? "oklch(var(--destructive) / 0.08)"
-                          : "oklch(var(--primary) / 0.07)",
-                      border: `1px solid ${totalRemaining !== null && totalRemaining <= 0 ? "oklch(var(--destructive) / 0.3)" : "oklch(var(--primary) / 0.2)"}`,
-                    }}
-                  >
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Info
-                        className="w-3.5 h-3.5"
-                        style={{ color: "oklch(var(--primary))" }}
-                      />
-                      <span
-                        className="text-xs font-semibold"
-                        style={{
-                          fontFamily: "Cabinet Grotesk, sans-serif",
-                          color: "oklch(var(--primary))",
-                        }}
-                      >
-                        Remaining by Size — {form.articleNo}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-5 gap-1 text-center">
-                      {(["S", "M", "L", "XL", "XXL"] as const).map((sz, i) => {
-                        const rem = remainingBySizeData[i];
-                        const isSelected = sizeUpperCase === sz;
-                        return (
-                          <div
-                            key={sz}
-                            className="rounded-md py-1"
-                            style={{
-                              background: isSelected
-                                ? "oklch(var(--primary) / 0.12)"
-                                : "transparent",
-                            }}
-                          >
-                            <div
-                              className="text-xs font-bold"
-                              style={{ color: "oklch(var(--primary))" }}
-                            >
-                              {sz}
-                            </div>
-                            <div
-                              className="text-sm font-semibold"
-                              style={{
-                                color:
-                                  rem <= 0
-                                    ? "oklch(var(--destructive))"
-                                    : "oklch(var(--success))",
-                              }}
-                            >
-                              {rem}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {remainingForSelectedSize !== null &&
-                      remainingForSelectedSize <= 0 && (
-                        <p
-                          className="text-xs text-center mt-2 font-medium"
-                          style={{ color: "oklch(var(--destructive))" }}
-                        >
-                          No remaining pieces for size {sizeUpperCase}
-                        </p>
-                      )}
-                  </div>
-                )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="tailor-name" className="data-label">
-                Tailor Name
-              </Label>
-              <Input
-                id="tailor-name"
-                data-ocid="tailor.name_input"
-                type="text"
-                placeholder="Enter tailor name"
-                value={form.tailorName}
-                onChange={handleChange("tailorName")}
-                className="input-factory"
-                style={
-                  errors.tailorName
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
-              />
-              {errors.tailorName && (
-                <p
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.tailorName}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="tailor-color" className="data-label">
-                Color
-              </Label>
-              <Input
-                id="tailor-color"
-                data-ocid="tailor.color_input"
-                type="text"
-                placeholder="e.g. Navy Blue, Red"
-                value={form.color}
-                onChange={handleChange("color")}
-                className="input-factory"
-                style={
-                  errors.color
-                    ? { borderColor: "oklch(var(--destructive))" }
-                    : {}
-                }
-              />
-              {errors.color && (
-                <p
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.color}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="tailor-size" className="data-label">
-                Size
-              </Label>
-              <SearchableDropdown
-                id="tailor-size"
-                data-ocid="tailor.size_input"
-                fieldKey="tailor_size"
-                placeholder="e.g. S, M, L, XL"
-                value={form.size}
-                onChange={(val) => {
-                  setForm((prev) => ({ ...prev, size: val }));
-                  setErrors((prev) => ({ ...prev, size: undefined }));
-                }}
-                hasError={!!errors.size}
-              />
-              {errors.size && (
-                <p
-                  className="text-xs font-medium"
-                  style={{ color: "oklch(var(--destructive))" }}
-                >
-                  {errors.size}
-                </p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="tailor-quantity" className="data-label">
-                  Quantity (Pcs)
-                </Label>
-                <Input
-                  id="tailor-quantity"
-                  data-ocid="tailor.quantity_input"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={form.quantity}
-                  onChange={handleChange("quantity")}
-                  className="input-factory"
-                  style={
-                    errors.quantity
-                      ? { borderColor: "oklch(var(--destructive))" }
-                      : {}
+          {/* Color - auto-fetched from Item Master */}
+          {form.articleNo && (
+            <div>
+              <Label>Color *</Label>
+              {availableColors.length > 0 ? (
+                <select
+                  data-ocid="tailor.color_select"
+                  className="input-factory w-full"
+                  value={form.color}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, color: e.target.value, size: "" }))
                   }
-                />
-                {errors.quantity && (
-                  <p
-                    className="text-xs font-medium"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  >
-                    {errors.quantity}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="tailor-pcsrate" className="data-label">
-                  Pcs Rate (₨)
-                </Label>
-                <Input
-                  id="tailor-pcsrate"
-                  data-ocid="tailor.pcsrate_input"
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  step="0.01"
-                  value={form.pcsRate}
-                  onChange={handleChange("pcsRate")}
-                  className="input-factory"
-                  style={
-                    errors.pcsRate
-                      ? { borderColor: "oklch(var(--destructive))" }
-                      : {}
-                  }
-                />
-                {errors.pcsRate && (
-                  <p
-                    className="text-xs font-medium"
-                    style={{ color: "oklch(var(--destructive))" }}
-                  >
-                    {errors.pcsRate}
-                  </p>
-                )}
-              </div>
+                >
+                  <option value="">Select color...</option>
+                  {availableColors.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: "oklch(var(--destructive))" }}
+                >
+                  No colors defined for this article. Update Item Master first.
+                </p>
+              )}
             </div>
+          )}
 
-            <div className="space-y-1">
-              <Label htmlFor="tailor-whatsapp" className="data-label">
-                WhatsApp No. (optional)
-              </Label>
-              <div className="relative">
-                <MessageCircle
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
-                  style={{ color: "#25D366" }}
-                />
-                <Input
-                  id="tailor-whatsapp"
-                  data-ocid="tailor.whatsapp_input"
-                  type="tel"
-                  inputMode="tel"
-                  placeholder="e.g. 923001234567"
-                  value={form.whatsappNo}
-                  onChange={handleChange("whatsappNo")}
-                  className="input-factory pl-9"
-                />
-              </div>
-              <p
-                className="text-xs"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                Include country code, e.g. 92 for Pakistan
-              </p>
+          {/* Size - auto-fetched based on selected color */}
+          {form.color && (
+            <div>
+              <Label>Size *</Label>
+              {availableSizes.length > 0 ? (
+                <select
+                  data-ocid="tailor.size_select"
+                  className="input-factory w-full"
+                  value={form.size}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, size: e.target.value }))
+                  }
+                >
+                  <option value="">Select size...</option>
+                  {availableSizes.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: "oklch(var(--destructive))" }}
+                >
+                  No sizes defined for this color.
+                </p>
+              )}
             </div>
+          )}
+
+          {/* Cutting status for selected color+size */}
+          {form.articleNo && form.color && form.size && (
+            <div
+              className="rounded-lg p-2 text-xs space-y-0.5"
+              style={{ background: "oklch(var(--muted))" }}
+            >
+              <div className="flex justify-between">
+                <span>
+                  Cutting Qty ({form.color} – {form.size}):
+                </span>
+                <span className="font-semibold">{cuttingQtyForColorSize}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Tailor Name */}
+          <div>
+            <Label>Tailor Name *</Label>
+            <SearchableDropdown
+              value={form.tailorName}
+              onChange={(v) => setForm((f) => ({ ...f, tailorName: v }))}
+              placeholder="Enter tailor name..."
+              fieldKey="tailorNames"
+            />
           </div>
 
-          {/* Action Buttons */}
-          <div className="space-y-2 pt-1">
+          {/* PCS Given */}
+          <div>
+            <Label>PCS Given *</Label>
+            <Input
+              data-ocid="tailor.pcs_input"
+              type="number"
+              value={form.pcsGiven}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, pcsGiven: e.target.value }))
+              }
+              placeholder="0"
+            />
+          </div>
+
+          {/* Rate - auto-filled from Item Master */}
+          <div>
+            <Label>Tailor Rate (per PCS)</Label>
+            <Input
+              data-ocid="tailor.rate_input"
+              type="number"
+              value={form.tailorRate}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, tailorRate: e.target.value }))
+              }
+              placeholder="Auto-filled from Item Master"
+            />
+            {form.articleNo &&
+              loadArticleRates(form.articleNo).tailorRate > 0 && (
+                <p
+                  className="text-xs mt-0.5"
+                  style={{ color: "oklch(var(--primary))" }}
+                >
+                  Rate auto-filled from Item Master (₹
+                  {loadArticleRates(form.articleNo).tailorRate})
+                </p>
+              )}
+          </div>
+
+          {/* Amount display */}
+          <div
+            className="rounded-lg p-3"
+            style={{ background: "oklch(var(--muted))" }}
+          >
+            <p
+              className="text-sm font-semibold"
+              style={{ color: "oklch(var(--foreground))" }}
+            >
+              Tailor Amount: ₹{tailorAmount.toFixed(2)}
+            </p>
+            <p
+              className="text-xs"
+              style={{ color: "oklch(var(--muted-foreground))" }}
+            >
+              {form.pcsGiven || 0} PCS × ₹{form.tailorRate || 0}
+            </p>
+          </div>
+
+          {/* Date */}
+          <div>
+            <Label>Date</Label>
+            <Input
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
             <Button
               data-ocid="tailor.save_button"
               onClick={handleSave}
-              disabled={addRecord.isPending}
-              className="w-full btn-factory"
-              size="lg"
-              style={{
-                background: "oklch(var(--success))",
-                color: "oklch(var(--success-foreground))",
-              }}
+              disabled={loading}
+              className="flex-1"
             >
-              {addRecord.isPending ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-5 h-5 mr-2" />
-                  Save Tailor Record
-                </>
-              )}
+              {loading
+                ? "Saving..."
+                : editId !== null
+                  ? "Update"
+                  : "Save Record"}
             </Button>
             <Button
-              data-ocid="tailor.clear_button"
-              onClick={handleClear}
               variant="outline"
-              className="w-full btn-factory"
-              size="lg"
+              onClick={() => {
+                setShowForm(false);
+                setForm(emptyForm());
+                setEditId(null);
+              }}
             >
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Clear Form
+              Cancel
             </Button>
-          </div>
-
-          <div
-            className="rounded-lg p-3 text-xs"
-            style={{
-              background: "oklch(var(--muted))",
-              color: "oklch(var(--muted-foreground))",
-            }}
-          >
-            <div
-              className="font-semibold mb-1"
-              style={{ fontFamily: "Cabinet Grotesk, sans-serif" }}
-            >
-              Calculation
-            </div>
-            <div>Final Amount = Quantity × Pcs Rate</div>
           </div>
         </div>
       )}
 
-      {/* ─── VIEW RECORDS SUB-TAB ───────────────────────────────── */}
-      {subTab === "view" && (
-        <div className="space-y-4">
-          {/* Filters */}
-          <div
-            className="rounded-lg p-3 space-y-3"
-            style={{ background: "oklch(var(--muted))" }}
-          >
-            <div className="flex items-center gap-2">
-              <CalendarRange
-                className="w-4 h-4"
-                style={{ color: "oklch(var(--primary))" }}
-              />
-              <span
-                className="text-sm font-semibold"
-                style={{
-                  fontFamily: "Cabinet Grotesk, sans-serif",
-                  color: "oklch(var(--foreground))",
-                }}
-              >
-                Filter Records
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="data-label">Date From</Label>
-                <Input
-                  data-ocid="tailor.date_from_input"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="input-factory"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="data-label">Date To</Label>
-                <Input
-                  data-ocid="tailor.date_to_input"
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="input-factory"
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="data-label">Article Filter</Label>
-              <Input
-                data-ocid="tailor.article_filter_input"
-                type="text"
-                placeholder="Search article no..."
-                value={articleFilter}
-                onChange={(e) => setArticleFilter(e.target.value)}
-                className="input-factory"
-              />
-            </div>
-          </div>
+      {/* Date Filter */}
+      <div
+        className="rounded-xl border p-4 space-y-3"
+        style={{
+          background: "oklch(var(--card))",
+          borderColor: "oklch(var(--border))",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <Label className="shrink-0">Filter by Date</Label>
+          <Input
+            data-ocid="tailor.date_filter_input"
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="flex-1"
+          />
+        </div>
 
-          {/* View Mode Toggle */}
-          <div
-            className="flex rounded-lg overflow-hidden border"
-            style={{ borderColor: "oklch(var(--border))" }}
+        {/* Summary Banner */}
+        <div
+          className="rounded-lg p-3 text-sm"
+          style={{
+            background: "oklch(var(--primary) / 0.08)",
+            border: "1px solid oklch(var(--primary) / 0.2)",
+          }}
+        >
+          <span
+            className="font-semibold"
+            style={{ color: "oklch(var(--primary))" }}
           >
-            <button
-              type="button"
-              data-ocid="tailor.all_records_tab"
-              onClick={() => setViewMode("all")}
-              className="flex-1 py-2 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-              style={{
-                background:
-                  viewMode === "all"
-                    ? "oklch(var(--secondary))"
-                    : "oklch(var(--muted))",
-                color:
-                  viewMode === "all"
-                    ? "oklch(var(--secondary-foreground))"
-                    : "oklch(var(--muted-foreground))",
-                borderRight: "1px solid oklch(var(--border))",
-                fontFamily: "Cabinet Grotesk, sans-serif",
-              }}
-            >
-              <LayoutList className="w-3.5 h-3.5" />
-              All Records
-            </button>
-            <button
-              type="button"
-              data-ocid="tailor.artwise_tab"
-              onClick={() => setViewMode("artwise")}
-              className="flex-1 py-2 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
-              style={{
-                background:
-                  viewMode === "artwise"
-                    ? "oklch(var(--secondary))"
-                    : "oklch(var(--muted))",
-                color:
-                  viewMode === "artwise"
-                    ? "oklch(var(--secondary-foreground))"
-                    : "oklch(var(--muted-foreground))",
-                fontFamily: "Cabinet Grotesk, sans-serif",
-              }}
-            >
-              <Scissors className="w-3.5 h-3.5" />
-              Article Wise
-            </button>
-          </div>
+            Date: {filterDate}
+          </span>
+          <span
+            className="mx-2"
+            style={{ color: "oklch(var(--muted-foreground))" }}
+          >
+            —
+          </span>
+          <span style={{ color: "oklch(var(--foreground))" }}>
+            {dateSummary.count} Records, {dateSummary.totalPcs} Pieces, ₹
+            {dateSummary.totalAmount.toFixed(2)}
+          </span>
+        </div>
 
-          {/* Tailor Summary */}
-          {filteredReport.length > 0 && (
-            <div
-              className="rounded-lg overflow-hidden border"
-              style={{ borderColor: "oklch(var(--border))" }}
-            >
-              <button
-                type="button"
-                onClick={() => setSummaryExpanded((v) => !v)}
-                className="w-full flex items-center justify-between px-4 py-3"
-                style={{ background: "oklch(var(--primary) / 0.08)" }}
+        {/* Employee-wise grouped cards */}
+        {employeeGroups.length === 0 ? (
+          <div
+            data-ocid="tailor.date_empty_state"
+            className="text-center py-4 text-sm"
+            style={{ color: "oklch(var(--muted-foreground))" }}
+          >
+            No records for this date.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {employeeGroups.map((eg, idx) => (
+              <div
+                key={eg.name}
+                data-ocid={`tailor.employee.card.${idx + 1}`}
+                className="rounded-lg border overflow-hidden"
+                style={{ borderColor: "oklch(var(--border))" }}
               >
-                <div className="flex items-center gap-2">
-                  <Scissors
-                    className="w-4 h-4"
-                    style={{ color: "oklch(var(--primary))" }}
-                  />
-                  <span
-                    className="text-sm font-bold"
-                    style={{
-                      fontFamily: "Cabinet Grotesk, sans-serif",
-                      color: "oklch(var(--primary))",
-                    }}
-                  >
-                    Tailor Summary ({filteredReport.length})
-                  </span>
+                {/* Employee header */}
+                <div
+                  className="px-3 py-2 flex items-center justify-between"
+                  style={{ background: "oklch(var(--primary) / 0.06)" }}
+                >
+                  <div>
+                    <p
+                      className="font-bold text-sm"
+                      style={{ color: "oklch(var(--foreground))" }}
+                    >
+                      {eg.name}
+                    </p>
+                    <p
+                      className="text-xs"
+                      style={{ color: "oklch(var(--muted-foreground))" }}
+                    >
+                      {eg.tailorPcs} pcs stitched
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p
+                      className="text-xs"
+                      style={{ color: "oklch(var(--muted-foreground))" }}
+                    >
+                      Net Payment
+                    </p>
+                    <p
+                      className="font-bold text-base"
+                      style={{ color: "oklch(var(--success))" }}
+                    >
+                      ₹{eg.netPayment.toFixed(2)}
+                    </p>
+                  </div>
                 </div>
-                {summaryExpanded ? (
-                  <ChevronUp
-                    className="w-4 h-4"
-                    style={{ color: "oklch(var(--primary))" }}
-                  />
-                ) : (
-                  <ChevronDown
-                    className="w-4 h-4"
-                    style={{ color: "oklch(var(--primary))" }}
-                  />
-                )}
-              </button>
-              {summaryExpanded && (
+
+                {/* Article-wise sub-rows */}
                 <div
                   className="divide-y"
                   style={{ borderColor: "oklch(var(--border))" }}
                 >
-                  {filteredReport.map(([name, totalQty, totalAmount]) => (
+                  <div
+                    className="grid grid-cols-5 px-3 py-1 text-xs font-semibold"
+                    style={{
+                      color: "oklch(var(--muted-foreground))",
+                      background: "oklch(var(--muted) / 0.5)",
+                    }}
+                  >
+                    <span>Article</span>
+                    <span>Color/Size</span>
+                    <span className="text-center">PCS</span>
+                    <span className="text-center">Rate</span>
+                    <span className="text-right">Amount</span>
+                  </div>
+                  {eg.recs.map((r) => (
                     <div
-                      key={name}
-                      className="px-4 py-3 space-y-2"
-                      style={{ background: "oklch(var(--card))" }}
+                      key={Number(r.id)}
+                      className="grid grid-cols-5 px-3 py-1.5 text-xs"
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div
-                            className="font-semibold text-sm"
-                            style={{
-                              fontFamily: "Cabinet Grotesk, sans-serif",
-                              color: "oklch(var(--foreground))",
-                            }}
-                          >
-                            {name}
-                          </div>
-                          <div className="data-label mt-0.5">
-                            {totalQty.toLocaleString()} pcs
-                          </div>
-                        </div>
-                        <div
-                          className="font-bold text-base"
-                          style={{ color: "oklch(var(--success))" }}
-                        >
-                          ₨ {totalAmount.toFixed(2)}
-                        </div>
+                      <span
+                        className="font-medium"
+                        style={{ color: "oklch(var(--primary))" }}
+                      >
+                        {r.articleNo}
+                      </span>
+                      <span style={{ color: "oklch(var(--muted-foreground))" }}>
+                        {r.color || "—"}/{r.size || "—"}
+                      </span>
+                      <span className="text-center">{r.pcsGiven}</span>
+                      <span className="text-center">₹{r.tailorRate}</span>
+                      <span className="text-right font-semibold">
+                        ₹{r.tailorAmount.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                  {/* Tailor subtotal */}
+                  <div
+                    className="grid grid-cols-5 px-3 py-1.5 text-xs font-semibold"
+                    style={{
+                      background: "oklch(var(--muted) / 0.4)",
+                      color: "oklch(var(--foreground))",
+                    }}
+                  >
+                    <span>Tailor Total</span>
+                    <span />
+                    <span className="text-center">{eg.tailorPcs}</span>
+                    <span />
+                    <span className="text-right">
+                      ₹{eg.tailorTotal.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Additional Work section */}
+                {eg.awForEmployee.length > 0 && (
+                  <div
+                    className="border-t"
+                    style={{ borderColor: "oklch(var(--border))" }}
+                  >
+                    <div
+                      className="px-3 py-1 text-xs font-semibold"
+                      style={{
+                        background: "oklch(var(--muted))",
+                        color: "oklch(var(--muted-foreground))",
+                      }}
+                    >
+                      Additional Work
+                    </div>
+                    {eg.awForEmployee.map((aw) => (
+                      <div
+                        key={Number(aw.id)}
+                        className="grid grid-cols-4 px-3 py-1.5 text-xs border-t"
+                        style={{ borderColor: "oklch(var(--border))" }}
+                      >
+                        <span className="font-medium">{aw.workType}</span>
+                        <span className="text-center">{aw.pcsDone}</span>
+                        <span className="text-center">₹{aw.ratePerPcs}</span>
+                        <span className="text-right font-semibold">
+                          ₹{aw.totalAmount.toFixed(2)}
+                        </span>
                       </div>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          type="tel"
-                          placeholder="WhatsApp no. (e.g. 923001234567)"
-                          value={tailorWhatsapp[name] || ""}
-                          onChange={(e) =>
-                            saveTailorWhatsapp(name, e.target.value)
-                          }
-                          className="input-factory flex-1 text-xs h-8 px-2"
-                          style={{ fontSize: "0.75rem" }}
-                          data-ocid="tailor.whatsapp_summary_input"
-                        />
-                        <Button
-                          size="sm"
-                          data-ocid="tailor.whatsapp_share_button"
-                          onClick={() => {
-                            // Build per-article breakdown for this tailor
-                            const tailorRecords = filteredRecords.filter(
-                              (r) => r.tailorName === name,
-                            );
-                            const artMap: Record<
-                              string,
-                              { qty: number; amount: number }
-                            > = {};
-                            for (const r of tailorRecords) {
-                              if (!artMap[r.articleNo])
-                                artMap[r.articleNo] = { qty: 0, amount: 0 };
-                              artMap[r.articleNo].qty += r.quantity;
-                              artMap[r.articleNo].amount += r.finalAmount;
-                            }
-                            const breakdown = Object.entries(artMap)
-                              .sort(([a], [b]) => a.localeCompare(b))
-                              .map(([articleNo, v]) => ({
-                                articleNo,
-                                qty: v.qty,
-                                amount: v.amount,
-                              }));
-                            shareOnWhatsApp(
-                              tailorWhatsapp[name] || "",
-                              name,
-                              totalQty,
-                              totalAmount,
-                              dateFrom,
-                              dateTo,
-                              breakdown,
-                            );
-                          }}
-                          className="h-8 px-3 shrink-0 text-white"
-                          style={{ background: "#25D366", fontSize: "0.72rem" }}
+                    ))}
+                    <div
+                      className="grid grid-cols-4 px-3 py-1.5 text-xs font-semibold border-t"
+                      style={{
+                        background: "oklch(var(--muted) / 0.4)",
+                        borderColor: "oklch(var(--border))",
+                        color: "oklch(var(--foreground))",
+                      }}
+                    >
+                      <span>Add. Work Total</span>
+                      <span />
+                      <span />
+                      <span className="text-right">
+                        ₹{eg.awTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Net Payment footer */}
+                <div
+                  className="px-3 py-2 flex justify-between items-center border-t"
+                  style={{
+                    background: "oklch(var(--success) / 0.08)",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                >
+                  <span
+                    className="text-xs font-bold"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    NET PAYMENT
+                  </span>
+                  <span
+                    className="font-bold text-sm"
+                    style={{ color: "oklch(var(--success))" }}
+                  >
+                    ₹{eg.netPayment.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Article-wise Breakdown (All Time) — collapsible */}
+      <div
+        className="rounded-xl border overflow-hidden"
+        style={{ borderColor: "oklch(var(--border))" }}
+      >
+        <button
+          type="button"
+          data-ocid="tailor.article_breakdown_toggle"
+          className="w-full flex items-center justify-between px-4 py-3 font-semibold text-sm"
+          style={{
+            background: "oklch(var(--card))",
+            color: "oklch(var(--foreground))",
+          }}
+          onClick={() => setShowArticleBreakdown((v) => !v)}
+        >
+          <span>Article-wise Tailor Breakdown (All Time)</span>
+          {showArticleBreakdown ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </button>
+        {showArticleBreakdown && (
+          <div
+            className="divide-y"
+            style={{ borderColor: "oklch(var(--border))" }}
+          >
+            {articleBreakdown.length === 0 ? (
+              <div
+                className="text-center py-4 text-sm"
+                style={{ color: "oklch(var(--muted-foreground))" }}
+              >
+                No records yet.
+              </div>
+            ) : (
+              articleBreakdown.map((ab) => (
+                <div key={ab.articleNo} className="p-3">
+                  <p
+                    className="font-bold text-sm mb-2"
+                    style={{ color: "oklch(var(--primary))" }}
+                  >
+                    {ab.articleNo}
+                  </p>
+                  <div className="space-y-1">
+                    {ab.tailors.map((t) => (
+                      <div
+                        key={t.name}
+                        className="flex justify-between text-xs"
+                      >
+                        <span style={{ color: "oklch(var(--foreground))" }}>
+                          {t.name}
+                        </span>
+                        <span
+                          className="font-semibold"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
                         >
-                          <MessageCircle className="w-3.5 h-3.5 mr-1" />
-                          WhatsApp
+                          {t.pcs} pcs
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* All Records Toggle */}
+      <div
+        className="rounded-xl border overflow-hidden"
+        style={{ borderColor: "oklch(var(--border))" }}
+      >
+        <button
+          type="button"
+          data-ocid="tailor.all_records_toggle"
+          className="w-full flex items-center justify-between px-4 py-3 font-semibold text-sm"
+          style={{
+            background: "oklch(var(--card))",
+            color: "oklch(var(--foreground))",
+          }}
+          onClick={() => setShowAllRecords((v) => !v)}
+        >
+          <span>View All Records ({records.length})</span>
+          {showAllRecords ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </button>
+        {showAllRecords && (
+          <div className="p-3 space-y-3">
+            <Input
+              placeholder="Filter by article..."
+              value={filterArticle}
+              onChange={(e) => setFilterArticle(e.target.value)}
+              className="mb-2"
+            />
+            <div className="space-y-2">
+              {filteredAll.length === 0 && (
+                <div
+                  data-ocid="tailor.empty_state"
+                  className="text-center py-6"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  No records found.
+                </div>
+              )}
+              {filteredAll.map((r, idx) => (
+                <div
+                  key={Number(r.id)}
+                  data-ocid={`tailor.item.${idx + 1}`}
+                  className="rounded-xl border p-3"
+                  style={{
+                    background: "oklch(var(--card))",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-bold text-sm">{r.articleNo}</p>
+                      <p className="text-sm">{r.tailorName}</p>
+                      {(r.color || r.size) && (
+                        <p
+                          className="text-xs"
+                          style={{ color: "oklch(var(--primary))" }}
+                        >
+                          {r.color && r.size
+                            ? `${r.color} / ${r.size}`
+                            : r.color || r.size}
+                        </p>
+                      )}
+                      <p
+                        className="text-xs"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        {r.date}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-sm">
+                        ₹{r.tailorAmount.toFixed(2)}
+                      </p>
+                      <p
+                        className="text-xs"
+                        style={{ color: "oklch(var(--muted-foreground))" }}
+                      >
+                        {r.pcsGiven} pcs @ ₹{r.tailorRate}
+                      </p>
+                      <div className="flex gap-1 mt-1">
+                        <Button
+                          data-ocid={`tailor.edit_button.${idx + 1}`}
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(r)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          data-ocid={`tailor.delete_button.${idx + 1}`}
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(r.id)}
+                        >
+                          Del
                         </Button>
                       </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Records List */}
-          {recordsLoading ? (
-            <div
-              data-ocid="tailor.loading_state"
-              className="flex items-center justify-center py-12"
-              style={{ color: "oklch(var(--muted-foreground))" }}
-            >
-              <Loader2 className="w-6 h-6 animate-spin mr-2" />
-              <span className="text-sm">Loading records...</span>
-            </div>
-          ) : filteredRecords.length === 0 ? (
-            <div
-              data-ocid="tailor.empty_state"
-              className="flex flex-col items-center justify-center py-14 space-y-2"
-            >
-              <Scissors
-                className="w-10 h-10"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              />
-              <p
-                className="text-sm font-medium"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                No tailor records found
-              </p>
-              <p
-                className="text-xs"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                Add a record or adjust your filters
-              </p>
-            </div>
-          ) : viewMode === "all" ? (
-            <div className="space-y-3">
-              <div
-                className="text-xs font-semibold px-1"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                {filteredRecords.length} record
-                {filteredRecords.length !== 1 ? "s" : ""}
-              </div>
-              {filteredRecords.map((record, idx) =>
-                renderRecordCard(record, idx),
-              )}
-            </div>
-          ) : (
-            /* Article Wise View */
-            <div className="space-y-3">
-              <div
-                className="text-xs font-semibold px-1"
-                style={{ color: "oklch(var(--muted-foreground))" }}
-              >
-                {sortedArticleKeys.length} article
-                {sortedArticleKeys.length !== 1 ? "s" : ""} ·{" "}
-                {filteredRecords.length} record
-                {filteredRecords.length !== 1 ? "s" : ""}
-              </div>
-              {sortedArticleKeys.map((articleNo, artIdx) => {
-                const groupRecords = articleGroups[articleNo];
-                const groupQty = groupRecords.reduce(
-                  (s, r) => s + r.quantity,
-                  0,
-                );
-                const groupAmt = groupRecords.reduce(
-                  (s, r) => s + r.finalAmount,
-                  0,
-                );
-                const isExpanded = expandedArticles[articleNo] !== false; // default expanded
-
-                return (
-                  <div
-                    key={articleNo}
-                    data-ocid={`tailor.article.panel.${artIdx + 1}`}
-                    className="rounded-lg border overflow-hidden"
-                    style={{ borderColor: "oklch(var(--primary) / 0.3)" }}
-                  >
-                    {/* Article Group Header */}
-                    <button
-                      type="button"
-                      onClick={() => toggleArticle(articleNo)}
-                      className="w-full flex items-center justify-between px-4 py-3"
-                      style={{ background: "oklch(var(--primary) / 0.08)" }}
-                    >
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span
-                          className="text-xs px-2 py-0.5 rounded-full font-bold shrink-0"
-                          style={{
-                            background: "oklch(var(--primary))",
-                            color: "oklch(var(--primary-foreground))",
-                            fontFamily: "Cabinet Grotesk, sans-serif",
-                          }}
-                        >
-                          {articleNo}
-                        </span>
-                        <span
-                          className="text-xs"
-                          style={{ color: "oklch(var(--muted-foreground))" }}
-                        >
-                          {groupRecords.length} record
-                          {groupRecords.length !== 1 ? "s" : ""}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="text-right">
-                          <div
-                            className="text-xs font-bold"
-                            style={{
-                              color: "oklch(var(--foreground))",
-                              fontFamily: "Cabinet Grotesk, sans-serif",
-                            }}
-                          >
-                            {groupQty.toLocaleString()} pcs
-                          </div>
-                          <div
-                            className="text-xs font-bold"
-                            style={{ color: "oklch(var(--success))" }}
-                          >
-                            ₨ {groupAmt.toFixed(2)}
-                          </div>
-                        </div>
-                        {isExpanded ? (
-                          <ChevronUp
-                            className="w-4 h-4"
-                            style={{ color: "oklch(var(--primary))" }}
-                          />
-                        ) : (
-                          <ChevronDown
-                            className="w-4 h-4"
-                            style={{ color: "oklch(var(--primary))" }}
-                          />
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Records inside article group */}
-                    {isExpanded && (
-                      <div
-                        className="divide-y p-3 space-y-2"
-                        style={{ background: "oklch(var(--background))" }}
-                      >
-                        {groupRecords.map((record, recIdx) => (
-                          <div
-                            key={String(record.id)}
-                            className={recIdx > 0 ? "pt-2" : ""}
-                          >
-                            {renderRecordCard(
-                              record,
-                              filteredRecords.indexOf(record),
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ─── EDIT DIALOG ─────────────────────────────────────────── */}
-      <Dialog
-        open={!!editingRecord}
-        onOpenChange={(open) => {
-          if (!open) setEditingRecord(null);
-        }}
-      >
-        <DialogContent
-          data-ocid="tailor.edit_dialog"
-          className="max-w-sm mx-auto"
-        >
-          <DialogHeader>
-            <DialogTitle style={{ fontFamily: "Cabinet Grotesk, sans-serif" }}>
-              Edit Tailor Record
-            </DialogTitle>
-          </DialogHeader>
-
-          {/* Live Amount Preview */}
-          {editFinalAmount > 0 && (
-            <div
-              className="rounded-lg px-4 py-2.5 flex items-center justify-between"
-              style={{
-                background: "oklch(var(--success) / 0.08)",
-                borderLeft: "3px solid oklch(var(--success))",
-              }}
-            >
-              <span className="data-label">Final Amount</span>
-              <span
-                className="font-bold text-base"
-                style={{ color: "oklch(var(--success))" }}
-              >
-                ₨ {editFinalAmount.toFixed(2)}
-              </span>
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label className="data-label">Date</Label>
-              <Input
-                data-ocid="tailor.edit.date_input"
-                type="date"
-                value={editForm.date}
-                onChange={handleEditChange("date")}
-                className="input-factory"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="data-label">Article No.</Label>
-              <Input
-                data-ocid="tailor.edit.article_input"
-                type="text"
-                placeholder="e.g. ART-2024-001"
-                value={editForm.articleNo}
-                onChange={handleEditChange("articleNo")}
-                className="input-factory"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="data-label">Tailor Name</Label>
-              <Input
-                data-ocid="tailor.edit.name_input"
-                type="text"
-                placeholder="Enter tailor name"
-                value={editForm.tailorName}
-                onChange={handleEditChange("tailorName")}
-                className="input-factory"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="data-label">Color</Label>
-              <Input
-                data-ocid="tailor.edit.color_input"
-                type="text"
-                placeholder="e.g. Navy Blue"
-                value={editForm.color}
-                onChange={handleEditChange("color")}
-                className="input-factory"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="data-label">Size</Label>
-              <Input
-                data-ocid="tailor.edit.size_input"
-                type="text"
-                placeholder="e.g. S, M, L, XL"
-                value={editForm.size}
-                onChange={handleEditChange("size")}
-                className="input-factory"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="data-label">Quantity (Pcs)</Label>
-                <Input
-                  data-ocid="tailor.edit.quantity_input"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={editForm.quantity}
-                  onChange={handleEditChange("quantity")}
-                  className="input-factory"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="data-label">Pcs Rate (₨)</Label>
-                <Input
-                  data-ocid="tailor.edit.pcsrate_input"
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  step="0.01"
-                  value={editForm.pcsRate}
-                  onChange={handleEditChange("pcsRate")}
-                  className="input-factory"
-                />
-              </div>
+                </div>
+              ))}
             </div>
           </div>
-
-          <DialogFooter className="gap-2 flex-row">
-            <Button
-              data-ocid="tailor.edit.cancel_button"
-              variant="outline"
-              onClick={() => setEditingRecord(null)}
-              disabled={editSaving}
-              className="flex-1"
-            >
-              Cancel
-            </Button>
-            <Button
-              data-ocid="tailor.edit.save_button"
-              onClick={handleEditSave}
-              disabled={editSaving}
-              className="flex-1"
-              style={{
-                background: "oklch(var(--primary))",
-                color: "oklch(var(--primary-foreground))",
-              }}
-            >
-              {editSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Changes
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
     </div>
   );
 }
