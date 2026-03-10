@@ -393,7 +393,7 @@ export function AdditionalWorkTab() {
     }
     const pcs = Number.parseFloat(form.pcsDone) || 0;
     if (pcs <= 0) {
-      toast.error("PCS Done must be greater than 0");
+      toast.error("Total Qty must be greater than 0");
       return;
     }
 
@@ -458,11 +458,16 @@ export function AdditionalWorkTab() {
           return;
         }
 
-        const alreadyDone = await actor.getAdditionalWorkQtyByColorSize(
-          form.articleNo,
-          color,
-          size,
-        );
+        // Per-work-type validation: only count same workType for this article/color/size
+        const alreadyDone = records
+          .filter(
+            (r) =>
+              r.articleNo === form.articleNo &&
+              r.workType === form.workType &&
+              r.color === color &&
+              r.size === size,
+          )
+          .reduce((s, r) => s + r.pcsDone, 0);
         const currentRec = records.find((r) => r.id === editId);
         const effectiveDone = currentRec
           ? Math.max(0, alreadyDone - currentRec.pcsDone)
@@ -502,11 +507,16 @@ export function AdditionalWorkTab() {
             continue;
           }
 
-          const alreadyDone = await actor.getAdditionalWorkQtyByColorSize(
-            form.articleNo,
-            color,
-            size,
-          );
+          // Per-work-type validation: only count same workType for this article/color/size
+          const alreadyDone = records
+            .filter(
+              (r) =>
+                r.articleNo === form.articleNo &&
+                r.workType === form.workType &&
+                r.color === color &&
+                r.size === size,
+            )
+            .reduce((s, r) => s + r.pcsDone, 0);
 
           if (alreadyDone + pcs > cuttingQty) {
             skipped++;
@@ -1416,7 +1426,7 @@ export function AdditionalWorkTab() {
 
           {/* PCS Done */}
           <div>
-            <Label>PCS Done *</Label>
+            <Label>Total Qty *</Label>
             <Input
               data-ocid="add_work.pcs_input"
               type="number"
@@ -1483,7 +1493,7 @@ export function AdditionalWorkTab() {
               style={{ color: "oklch(var(--muted-foreground))" }}
             >
               {form.pcsDone || 0} pcs × ₹{form.ratePerPcs || 0}
-              {previewCombos.length > 1 && (
+              {previewCombos.length > 1 && form.color !== "__ALL_COLORS__" && (
                 <span className="ml-1">
                   (×{previewCombos.length} combinations = ₹
                   {(totalAmount * previewCombos.length).toFixed(2)} total)

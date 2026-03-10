@@ -155,16 +155,7 @@ export function ItemMasterTab() {
       toast.error("Total Quantity must be greater than 0");
       return;
     }
-    if (form.colorEntries.length === 0) {
-      toast.error("Add at least one color with sizes");
-      return;
-    }
-    if (!sizeMatchesTotal) {
-      toast.error(
-        `Total of all sizes (${totalColorSizeSum}) must match Total Quantity (${totalQtyNum})`,
-      );
-      return;
-    }
+    // Colors and sizes are optional -- no blocking validation
 
     // Build colorSizeData JSON
     const colorSizeData = JSON.stringify(

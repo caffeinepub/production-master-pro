@@ -9,6 +9,7 @@ import { ItemMasterTab } from "./components/ItemMasterTab";
 import { LoginScreen } from "./components/LoginScreen";
 import { MasterReportTab } from "./components/MasterReportTab";
 import { PaymentTab } from "./components/PaymentTab";
+import { SplashScreen } from "./components/SplashScreen";
 import { TailorTab } from "./components/TailorTab";
 
 export type TabId =
@@ -25,8 +26,18 @@ const HOST = typeof window !== "undefined" ? window.location.hostname : "";
 const FOOTER_HREF = `https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(HOST)}`;
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("item_master");
+
+  if (showSplash) {
+    return (
+      <>
+        <SplashScreen onDone={() => setShowSplash(false)} />
+        <Toaster position="top-center" richColors />
+      </>
+    );
+  }
 
   if (!isLoggedIn) {
     return (

@@ -149,10 +149,6 @@ export function TailorTab() {
       toast.error("Color is required");
       return;
     }
-    if (!form.size) {
-      toast.error("Size is required");
-      return;
-    }
     if (!form.tailorName.trim()) {
       toast.error("Tailor Name required");
       return;
@@ -185,7 +181,10 @@ export function TailorTab() {
         }
       }
 
-      if (effectiveStitched + pcs > cuttingQtyForColorSize) {
+      if (
+        form.size !== "All Sizes" &&
+        effectiveStitched + pcs > cuttingQtyForColorSize
+      ) {
         toast.error(
           "Error: Work quantity cannot exceed cutting quantity for this color and size.",
         );
@@ -541,7 +540,7 @@ export function TailorTab() {
           {/* Size - auto-fetched based on selected color */}
           {form.color && (
             <div>
-              <Label>Size *</Label>
+              <Label>Size</Label>
               {availableSizes.length > 0 ? (
                 <select
                   data-ocid="tailor.size_select"
@@ -552,6 +551,7 @@ export function TailorTab() {
                   }
                 >
                   <option value="">Select size...</option>
+                  <option value="All Sizes">📐 All Sizes</option>
                   {availableSizes.map((s) => (
                     <option key={s} value={s}>
                       {s}
