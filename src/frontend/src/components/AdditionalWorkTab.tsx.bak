@@ -430,67 +430,81 @@ export function AdditionalWorkTab() {
       }
     }
 
+    const combos = resolveColorSizeCombos(effectiveColor, effectiveSize);
+    if (combos.length === 0) {
+      toast.error("No valid color/size combinations found.");
+      return;
+    }
+
+    const isAllMode =
+      effectiveColor === ALL_COLORS_VALUE || effectiveSize === ALL_SIZES_VALUE;
     const rate = Number.parseFloat(form.ratePerPcs) || 0;
-    const isTrueAllMode =
-      effectiveColor === ALL_COLORS_VALUE && effectiveSize === ALL_SIZES_VALUE;
 
     setLoading(true);
     try {
-      if (isTrueAllMode) {
-        // Both Color and Size are "All" → save ONE record with the entered quantity as the final total.
-        // Do NOT expand per combo — Quantity × Rate is the correct formula.
-        if (editId !== null) {
-          await actor.updateAdditionalWorkRecord(
-            editId,
-            form.date,
-            form.articleNo,
-            form.workType,
-            form.employeeName,
-            pcs,
-            rate,
-            ALL_COLORS_VALUE,
-            ALL_SIZES_VALUE,
+      if (editId !== null && !isAllMode) {
+        // Single record update
+        const { color, size } = combos[0];
+        const cuttingQty =
+          selectedArticleColorEntries.find((c) => c.color === color)?.sizes[
+            size
+          ] || 0;
+
+        if (cuttingQty <= 0) {
+          toast.error(
+            "No cutting quantity defined for this color and size in Item Master.",
           );
-          toast.success("Record updated");
-        } else {
-          await actor.addAdditionalWorkRecord(
-            form.date,
-            form.articleNo,
-            form.workType,
-            form.employeeName,
-            pcs,
-            rate,
-            ALL_COLORS_VALUE,
-            ALL_SIZES_VALUE,
-          );
-          toast.success("Record saved");
-        }
-      } else {
-        // Specific color/size or partial-all (one axis is All) → expand into combos
-        const combos = resolveColorSizeCombos(effectiveColor, effectiveSize);
-        if (combos.length === 0) {
-          toast.error("No valid color/size combinations found.");
           setLoading(false);
           return;
         }
-        const isPartialAllMode =
-          effectiveColor === ALL_COLORS_VALUE ||
-          effectiveSize === ALL_SIZES_VALUE;
 
-        if (editId !== null && !isPartialAllMode) {
-          // Single record update
-          const { color, size } = combos[0];
+        // Per-work-type validation: only count same workType for this article/color/size
+        const alreadyDone = records
+          .filter(
+            (r) =>
+              r.articleNo === form.articleNo &&
+              r.workType === form.workType &&
+              r.color === color &&
+              r.size === size,
+          )
+          .reduce((s, r) => s + r.pcsDone, 0);
+        const currentRec = records.find((r) => r.id === editId);
+        const effectiveDone = currentRec
+          ? Math.max(0, alreadyDone - currentRec.pcsDone)
+          : alreadyDone;
+
+        if (effectiveDone + pcs > cuttingQty) {
+          toast.error(
+            "Error: Work quantity cannot exceed cutting quantity for this color and size.",
+          );
+          setLoading(false);
+          return;
+        }
+
+        await actor.updateAdditionalWorkRecord(
+          editId,
+          form.date,
+          form.articleNo,
+          form.workType,
+          form.employeeName,
+          pcs,
+          rate,
+          color,
+          size,
+        );
+        toast.success("Record updated");
+      } else {
+        // Save one record per color+size combo
+        let saved = 0;
+        let skipped = 0;
+        for (const { color, size } of combos) {
           const cuttingQty =
             selectedArticleColorEntries.find((c) => c.color === color)?.sizes[
               size
             ] || 0;
-
           if (cuttingQty <= 0) {
-            toast.error(
-              "No cutting quantity defined for this color and size in Item Master.",
-            );
-            setLoading(false);
-            return;
+            skipped++;
+            continue;
           }
 
           // Per-work-type validation: only count same workType for this article/color/size
@@ -503,21 +517,13 @@ export function AdditionalWorkTab() {
                 r.size === size,
             )
             .reduce((s, r) => s + r.pcsDone, 0);
-          const currentRec = records.find((r) => r.id === editId);
-          const effectiveDone = currentRec
-            ? Math.max(0, alreadyDone - currentRec.pcsDone)
-            : alreadyDone;
 
-          if (effectiveDone + pcs > cuttingQty) {
-            toast.error(
-              "Error: Work quantity cannot exceed cutting quantity for this color and size.",
-            );
-            setLoading(false);
-            return;
+          if (alreadyDone + pcs > cuttingQty) {
+            skipped++;
+            continue;
           }
 
-          await actor.updateAdditionalWorkRecord(
-            editId,
+          await actor.addAdditionalWorkRecord(
             form.date,
             form.articleNo,
             form.workType,
@@ -527,69 +533,27 @@ export function AdditionalWorkTab() {
             color,
             size,
           );
-          toast.success("Record updated");
+          saved++;
+        }
+
+        if (saved === 0) {
+          toast.error(
+            "Error: Work quantity cannot exceed cutting quantity for this color and size.",
+          );
+          setLoading(false);
+          return;
+        }
+
+        if (skipped > 0) {
+          toast.success(
+            `Saved ${saved} record(s). ${skipped} skipped (quantity limit reached).`,
+          );
         } else {
-          // Save one record per color+size combo
-          let saved = 0;
-          let skipped = 0;
-          for (const { color, size } of combos) {
-            const cuttingQty =
-              selectedArticleColorEntries.find((c) => c.color === color)?.sizes[
-                size
-              ] || 0;
-            if (cuttingQty <= 0) {
-              skipped++;
-              continue;
-            }
-
-            // Per-work-type validation: only count same workType for this article/color/size
-            const alreadyDone = records
-              .filter(
-                (r) =>
-                  r.articleNo === form.articleNo &&
-                  r.workType === form.workType &&
-                  r.color === color &&
-                  r.size === size,
-              )
-              .reduce((s, r) => s + r.pcsDone, 0);
-
-            if (alreadyDone + pcs > cuttingQty) {
-              skipped++;
-              continue;
-            }
-
-            await actor.addAdditionalWorkRecord(
-              form.date,
-              form.articleNo,
-              form.workType,
-              form.employeeName,
-              pcs,
-              rate,
-              color,
-              size,
-            );
-            saved++;
-          }
-
-          if (saved === 0) {
-            toast.error(
-              "Error: Work quantity cannot exceed cutting quantity for this color and size.",
-            );
-            setLoading(false);
-            return;
-          }
-
-          if (skipped > 0) {
-            toast.success(
-              `Saved ${saved} record(s). ${skipped} skipped (quantity limit reached).`,
-            );
-          } else {
-            toast.success(
-              combos.length > 1
-                ? `Saved ${saved} records for ${combos.length} color/size combinations.`
-                : "Record saved",
-            );
-          }
+          toast.success(
+            combos.length > 1
+              ? `Saved ${saved} records for ${combos.length} color/size combinations.`
+              : "Record saved",
+          );
         }
       }
 

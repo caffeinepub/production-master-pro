@@ -235,9 +235,7 @@ export function ItemMasterTab() {
       ) {
         toast.error("Network error — check your connection and try again");
       } else {
-        toast.error(
-          `Failed to save item: ${msg.length < 120 ? msg : "Server error — please try again"}`,
-        );
+        toast.error(`Failed to save item: ${msg}`);
       }
       setLoading(false);
       return;
