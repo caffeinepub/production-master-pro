@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  DispatchRecord,
+  ItemMaster,
   OverlockRecord,
   ProductionRecord,
   TailorRecord,
@@ -70,7 +72,6 @@ export function useAddRecord() {
       finalAmount: number;
     }) => {
       if (!actor) throw new Error("Not connected");
-      // Explicitly convert to float to ensure correct candid float64 serialization
       return actor.addRecord(
         params.date,
         params.articleNo,
@@ -163,6 +164,7 @@ export function useAddTailorRecord() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tailorRecords"] });
       queryClient.invalidateQueries({ queryKey: ["tailorReport"] });
+      queryClient.invalidateQueries({ queryKey: ["articleRemaining"] });
     },
   });
 }
@@ -178,6 +180,7 @@ export function useDeleteTailorRecord() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tailorRecords"] });
       queryClient.invalidateQueries({ queryKey: ["tailorReport"] });
+      queryClient.invalidateQueries({ queryKey: ["articleRemaining"] });
     },
   });
 }
@@ -250,6 +253,223 @@ export function useDeleteOverlockRecord() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["overlockRecords"] });
       queryClient.invalidateQueries({ queryKey: ["overlockReport"] });
+    },
+  });
+}
+
+// ─── Item Master Hooks ───────────────────────────────────────────────────────
+
+export function useGetItemMasters() {
+  const { actor, isFetching } = useActor();
+  return useQuery<ItemMaster[]>({
+    queryKey: ["itemMasters"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getItemMasters();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useGetItemMasterByArticle(articleNo: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<ItemMaster | null>({
+    queryKey: ["itemMasterByArticle", articleNo],
+    queryFn: async () => {
+      if (!actor || !articleNo) return null;
+      return actor.getItemMasterByArticle(articleNo);
+    },
+    enabled: !!actor && !isFetching && !!articleNo,
+  });
+}
+
+export function useGetArticleRemainingBySize(articleNo: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<[number, number, number, number, number] | null>({
+    queryKey: ["articleRemaining", articleNo],
+    queryFn: async () => {
+      if (!actor || !articleNo) return null;
+      return actor.getArticleRemainingBySize(articleNo);
+    },
+    enabled: !!actor && !isFetching && !!articleNo,
+  });
+}
+
+export function useGetDispatchedQtyByArticle(articleNo: string) {
+  const { actor, isFetching } = useActor();
+  return useQuery<number>({
+    queryKey: ["dispatchedQty", articleNo],
+    queryFn: async () => {
+      if (!actor || !articleNo) return 0;
+      return actor.getDispatchedQtyByArticle(articleNo);
+    },
+    enabled: !!actor && !isFetching && !!articleNo,
+  });
+}
+
+export function useAddItemMaster() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      articleNo: string;
+      totalQuantity: number;
+      sizeS: number;
+      sizeM: number;
+      sizeL: number;
+      sizeXL: number;
+      sizeXXL: number;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.addItemMaster(
+        params.articleNo,
+        params.totalQuantity,
+        params.sizeS,
+        params.sizeM,
+        params.sizeL,
+        params.sizeXL,
+        params.sizeXXL,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["itemMasters"] });
+    },
+  });
+}
+
+export function useUpdateItemMaster() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      id: bigint;
+      articleNo: string;
+      totalQuantity: number;
+      sizeS: number;
+      sizeM: number;
+      sizeL: number;
+      sizeXL: number;
+      sizeXXL: number;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.updateItemMaster(
+        params.id,
+        params.articleNo,
+        params.totalQuantity,
+        params.sizeS,
+        params.sizeM,
+        params.sizeL,
+        params.sizeXL,
+        params.sizeXXL,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["itemMasters"] });
+      queryClient.invalidateQueries({ queryKey: ["itemMasterByArticle"] });
+      queryClient.invalidateQueries({ queryKey: ["articleRemaining"] });
+    },
+  });
+}
+
+export function useDeleteItemMaster() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.deleteItemMaster(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["itemMasters"] });
+    },
+  });
+}
+
+// ─── Dispatch Hooks ──────────────────────────────────────────────────────────
+
+export function useGetDispatchRecords() {
+  const { actor, isFetching } = useActor();
+  return useQuery<DispatchRecord[]>({
+    queryKey: ["dispatchRecords"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getDispatchRecords();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useAddDispatchRecord() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      date: string;
+      articleNo: string;
+      dispatchQuantity: number;
+      salePrice: number;
+      percentage: number;
+      finalPayment: number;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.addDispatchRecord(
+        params.date,
+        params.articleNo,
+        params.dispatchQuantity,
+        params.salePrice,
+        params.percentage,
+        params.finalPayment,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dispatchRecords"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatchedQty"] });
+    },
+  });
+}
+
+export function useUpdateDispatchRecord() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (params: {
+      id: bigint;
+      date: string;
+      articleNo: string;
+      dispatchQuantity: number;
+      salePrice: number;
+      percentage: number;
+      finalPayment: number;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.updateDispatchRecord(
+        params.id,
+        params.date,
+        params.articleNo,
+        params.dispatchQuantity,
+        params.salePrice,
+        params.percentage,
+        params.finalPayment,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dispatchRecords"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatchedQty"] });
+    },
+  });
+}
+
+export function useDeleteDispatchRecord() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.deleteDispatchRecord(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dispatchRecords"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatchedQty"] });
     },
   });
 }

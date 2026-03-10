@@ -1,10 +1,11 @@
 import { Toaster } from "@/components/ui/sonner";
 import { useState } from "react";
 import { AppHeader } from "./components/AppHeader";
-import { ArticleReportTab } from "./components/ArticleReportTab";
 import { BottomNav } from "./components/BottomNav";
+import { DispatchTab } from "./components/DispatchTab";
 import { EntryTab } from "./components/EntryTab";
 import { HistoryTab } from "./components/HistoryTab";
+import { ItemMasterTab } from "./components/ItemMasterTab";
 import { MasterReportTab } from "./components/MasterReportTab";
 import { OverlockTab } from "./components/OverlockTab";
 import { PaymentTab } from "./components/PaymentTab";
@@ -14,10 +15,11 @@ export type TabId =
   | "entry"
   | "history"
   | "master_report"
-  | "article_report"
+  | "item_master"
   | "payment"
   | "tailor"
-  | "overlock";
+  | "overlock"
+  | "dispatch";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const HOST = typeof window !== "undefined" ? window.location.hostname : "";
@@ -34,10 +36,11 @@ export default function App() {
         {activeTab === "entry" && <EntryTab />}
         {activeTab === "history" && <HistoryTab />}
         {activeTab === "master_report" && <MasterReportTab />}
-        {activeTab === "article_report" && <ArticleReportTab />}
+        {activeTab === "item_master" && <ItemMasterTab />}
         {activeTab === "payment" && <PaymentTab />}
         {activeTab === "tailor" && <TailorTab />}
         {activeTab === "overlock" && <OverlockTab />}
+        {activeTab === "dispatch" && <DispatchTab />}
 
         {/* Footer */}
         <footer className="px-4 py-4 text-center">

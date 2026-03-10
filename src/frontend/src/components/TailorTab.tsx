@@ -31,7 +31,8 @@ import type { TailorRecord } from "../backend";
 import {
   useAddTailorRecord,
   useDeleteTailorRecord,
-  useGetRecords,
+  useGetArticleRemainingBySize,
+  useGetItemMasterByArticle,
   useGetTailorRecords,
   useGetTailorReport,
 } from "../hooks/useQueries";
@@ -168,40 +169,40 @@ export function TailorTab() {
   const { data: records = [], isLoading: recordsLoading } =
     useGetTailorRecords();
   const { data: report = [] } = useGetTailorReport();
-  const { data: productionRecords = [] } = useGetRecords();
   const addRecord = useAddTailorRecord();
   const deleteRecord = useDeleteTailorRecord();
 
-  // Compute article cutting stats
-  const articleCuttingMap = productionRecords.reduce<Record<string, number>>(
-    (acc, r) => {
-      acc[r.articleNo] = (acc[r.articleNo] || 0) + r.cutByMaster;
-      return acc;
-    },
-    {},
+  // Item Master based cutting stats
+  const { data: selectedItemMaster } = useGetItemMasterByArticle(
+    form.articleNo,
+  );
+  const { data: remainingBySizeData } = useGetArticleRemainingBySize(
+    form.articleNo,
   );
 
-  const articleStitchedMap = records.reduce<Record<string, number>>(
-    (acc, r) => {
-      acc[r.articleNo] = (acc[r.articleNo] || 0) + r.quantity;
-      return acc;
-    },
-    {},
-  );
-
-  const selectedArticleCutting =
-    form.articleNo && articleCuttingMap[form.articleNo] !== undefined
-      ? articleCuttingMap[form.articleNo]
+  // Map size label to remaining quantity index: S=0, M=1, L=2, XL=3, XXL=4
+  const SIZE_INDEX: Record<string, number> = {
+    S: 0,
+    M: 1,
+    L: 2,
+    XL: 3,
+    XXL: 4,
+  };
+  const sizeUpperCase = form.size.toUpperCase();
+  const selectedSizeIdx = SIZE_INDEX[sizeUpperCase] ?? -1;
+  const remainingForSelectedSize =
+    remainingBySizeData !== null &&
+    remainingBySizeData !== undefined &&
+    selectedSizeIdx >= 0
+      ? remainingBySizeData[selectedSizeIdx]
       : null;
 
-  const selectedArticleStitched = form.articleNo
-    ? articleStitchedMap[form.articleNo] || 0
-    : 0;
-
-  const remainingCutting =
-    selectedArticleCutting !== null
-      ? selectedArticleCutting - selectedArticleStitched
+  // For banner: total remaining (sum all sizes)
+  const totalRemaining =
+    remainingBySizeData !== null && remainingBySizeData !== undefined
+      ? remainingBySizeData.reduce((a, b) => a + b, 0)
       : null;
+  const articleExistsInItemMaster = !!selectedItemMaster;
 
   const finalAmount =
     (Number(form.quantity) || 0) * (Number(form.pcsRate) || 0);
@@ -239,10 +240,13 @@ export function TailorTab() {
     )
       newErrors.quantity = "Enter valid quantity";
     else if (
-      remainingCutting !== null &&
-      Number(form.quantity) > remainingCutting
+      remainingForSelectedSize !== null &&
+      Number(form.quantity) > remainingForSelectedSize
     )
-      newErrors.quantity = `Cannot exceed remaining cutting of ${remainingCutting.toLocaleString()} pcs`;
+      newErrors.quantity =
+        "Entered quantity exceeds available production quantity.";
+    if (form.articleNo && !articleExistsInItemMaster)
+      newErrors.articleNo = "Please create this article first in Item Master.";
     if (
       !form.pcsRate ||
       Number.isNaN(Number(form.pcsRate)) ||
@@ -691,107 +695,103 @@ export function TailorTab() {
                   {errors.articleNo}
                 </p>
               )}
-              {/* Cutting Stats Banner */}
-              {selectedArticleCutting !== null && (
+              {/* Item Master Status Banner */}
+              {form.articleNo && !articleExistsInItemMaster && (
                 <div
-                  data-ocid="tailor.cutting_stats_panel"
-                  className="rounded-lg p-3 mt-1"
+                  data-ocid="tailor.article_not_found_error"
+                  className="rounded-lg p-3 mt-1 flex items-start gap-2"
                   style={{
-                    background:
-                      remainingCutting !== null && remainingCutting <= 0
-                        ? "oklch(var(--destructive) / 0.08)"
-                        : "oklch(var(--primary) / 0.07)",
-                    border: `1px solid ${remainingCutting !== null && remainingCutting <= 0 ? "oklch(var(--destructive) / 0.3)" : "oklch(var(--primary) / 0.2)"}`,
+                    background: "oklch(var(--destructive) / 0.08)",
+                    border: "1px solid oklch(var(--destructive) / 0.3)",
                   }}
                 >
-                  <div className="flex items-center gap-1.5 mb-2">
-                    {remainingCutting !== null && remainingCutting <= 0 ? (
-                      <AlertTriangle
-                        className="w-3.5 h-3.5"
-                        style={{ color: "oklch(var(--destructive))" }}
-                      />
-                    ) : (
+                  <AlertTriangle
+                    className="w-4 h-4 mt-0.5 shrink-0"
+                    style={{ color: "oklch(var(--destructive))" }}
+                  />
+                  <p
+                    className="text-xs font-medium"
+                    style={{ color: "oklch(var(--destructive))" }}
+                  >
+                    Please create this article first in Item Master.
+                  </p>
+                </div>
+              )}
+              {articleExistsInItemMaster &&
+                remainingBySizeData !== null &&
+                remainingBySizeData !== undefined && (
+                  <div
+                    data-ocid="tailor.cutting_stats_panel"
+                    className="rounded-lg p-3 mt-1"
+                    style={{
+                      background:
+                        totalRemaining !== null && totalRemaining <= 0
+                          ? "oklch(var(--destructive) / 0.08)"
+                          : "oklch(var(--primary) / 0.07)",
+                      border: `1px solid ${totalRemaining !== null && totalRemaining <= 0 ? "oklch(var(--destructive) / 0.3)" : "oklch(var(--primary) / 0.2)"}`,
+                    }}
+                  >
+                    <div className="flex items-center gap-1.5 mb-2">
                       <Info
                         className="w-3.5 h-3.5"
                         style={{ color: "oklch(var(--primary))" }}
                       />
-                    )}
-                    <span
-                      className="text-xs font-semibold"
-                      style={{
-                        fontFamily: "Cabinet Grotesk, sans-serif",
-                        color:
-                          remainingCutting !== null && remainingCutting <= 0
-                            ? "oklch(var(--destructive))"
-                            : "oklch(var(--primary))",
-                      }}
-                    >
-                      Cutting Status — {form.articleNo}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div
-                        className="text-xs"
-                        style={{ color: "oklch(var(--muted-foreground))" }}
-                      >
-                        Total Cut
-                      </div>
-                      <div
-                        className="font-bold text-sm"
-                        style={{ color: "oklch(var(--foreground))" }}
-                      >
-                        {selectedArticleCutting.toLocaleString()}
-                      </div>
-                    </div>
-                    <div>
-                      <div
-                        className="text-xs"
-                        style={{ color: "oklch(var(--muted-foreground))" }}
-                      >
-                        Stitched
-                      </div>
-                      <div
-                        className="font-bold text-sm"
+                      <span
+                        className="text-xs font-semibold"
                         style={{
-                          color: "oklch(var(--warning, var(--foreground)))",
+                          fontFamily: "Cabinet Grotesk, sans-serif",
+                          color: "oklch(var(--primary))",
                         }}
                       >
-                        {selectedArticleStitched.toLocaleString()}
-                      </div>
+                        Remaining by Size — {form.articleNo}
+                      </span>
                     </div>
-                    <div>
-                      <div
-                        className="text-xs"
-                        style={{ color: "oklch(var(--muted-foreground))" }}
-                      >
-                        Remaining
-                      </div>
-                      <div
-                        className="font-bold text-sm"
-                        style={{
-                          color:
-                            remainingCutting !== null && remainingCutting <= 0
-                              ? "oklch(var(--destructive))"
-                              : "oklch(var(--success))",
-                        }}
-                      >
-                        {remainingCutting !== null
-                          ? remainingCutting.toLocaleString()
-                          : "—"}
-                      </div>
+                    <div className="grid grid-cols-5 gap-1 text-center">
+                      {(["S", "M", "L", "XL", "XXL"] as const).map((sz, i) => {
+                        const rem = remainingBySizeData[i];
+                        const isSelected = sizeUpperCase === sz;
+                        return (
+                          <div
+                            key={sz}
+                            className="rounded-md py-1"
+                            style={{
+                              background: isSelected
+                                ? "oklch(var(--primary) / 0.12)"
+                                : "transparent",
+                            }}
+                          >
+                            <div
+                              className="text-xs font-bold"
+                              style={{ color: "oklch(var(--primary))" }}
+                            >
+                              {sz}
+                            </div>
+                            <div
+                              className="text-sm font-semibold"
+                              style={{
+                                color:
+                                  rem <= 0
+                                    ? "oklch(var(--destructive))"
+                                    : "oklch(var(--success))",
+                              }}
+                            >
+                              {rem}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
+                    {remainingForSelectedSize !== null &&
+                      remainingForSelectedSize <= 0 && (
+                        <p
+                          className="text-xs text-center mt-2 font-medium"
+                          style={{ color: "oklch(var(--destructive))" }}
+                        >
+                          No remaining pieces for size {sizeUpperCase}
+                        </p>
+                      )}
                   </div>
-                  {remainingCutting !== null && remainingCutting <= 0 && (
-                    <p
-                      className="text-xs text-center mt-2 font-medium"
-                      style={{ color: "oklch(var(--destructive))" }}
-                    >
-                      No remaining cutting pieces for this article
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
             </div>
 
             <div className="space-y-1">

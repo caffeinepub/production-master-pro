@@ -8,6 +8,25 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
+export const DispatchRecord = IDL.Record({
+  'id' : IDL.Nat,
+  'date' : IDL.Text,
+  'finalPayment' : IDL.Float64,
+  'articleNo' : IDL.Text,
+  'salePrice' : IDL.Float64,
+  'dispatchQuantity' : IDL.Float64,
+  'percentage' : IDL.Float64,
+});
+export const ItemMaster = IDL.Record({
+  'id' : IDL.Nat,
+  'sizeXXL' : IDL.Float64,
+  'sizeL' : IDL.Float64,
+  'sizeM' : IDL.Float64,
+  'sizeS' : IDL.Float64,
+  'articleNo' : IDL.Text,
+  'sizeXL' : IDL.Float64,
+  'totalQuantity' : IDL.Float64,
+});
 export const OverlockRecord = IDL.Record({
   'id' : IDL.Nat,
   'finalAmount' : IDL.Float64,
@@ -26,8 +45,8 @@ export const ProductionRecord = IDL.Record({
   'rate' : IDL.Float64,
   'totalPcs' : IDL.Float64,
   'articleNo' : IDL.Text,
-  'masterName' : IDL.Text,
   'cutByMaster' : IDL.Float64,
+  'partyName' : IDL.Text,
   'percentage' : IDL.Float64,
 });
 export const TailorRecord = IDL.Record({
@@ -43,6 +62,24 @@ export const TailorRecord = IDL.Record({
 });
 
 export const idlService = IDL.Service({
+  'addDispatchRecord' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Float64, IDL.Float64, IDL.Float64, IDL.Float64],
+      [IDL.Nat],
+      [],
+    ),
+  'addItemMaster' : IDL.Func(
+      [
+        IDL.Text,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+      ],
+      [IDL.Nat],
+      [],
+    ),
   'addOverlockRecord' : IDL.Func(
       [
         IDL.Text,
@@ -85,14 +122,39 @@ export const idlService = IDL.Service({
       [IDL.Nat],
       [],
     ),
+  'deleteDispatchRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+  'deleteItemMaster' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'deleteOverlockRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'deleteRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
   'deleteTailorRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+  'getArticleRemainingBySize' : IDL.Func(
+      [IDL.Text],
+      [
+        IDL.Opt(
+          IDL.Tuple(
+            IDL.Float64,
+            IDL.Float64,
+            IDL.Float64,
+            IDL.Float64,
+            IDL.Float64,
+          )
+        ),
+      ],
+      ['query'],
+    ),
   'getArticleReport' : IDL.Func(
       [],
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64))],
       ['query'],
     ),
+  'getDispatchRecords' : IDL.Func([], [IDL.Vec(DispatchRecord)], ['query']),
+  'getDispatchedQtyByArticle' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
+  'getItemMasterByArticle' : IDL.Func(
+      [IDL.Text],
+      [IDL.Opt(ItemMaster)],
+      ['query'],
+    ),
+  'getItemMasters' : IDL.Func([], [IDL.Vec(ItemMaster)], ['query']),
   'getMasterNames' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
   'getMasterReport' : IDL.Func(
       [],
@@ -111,6 +173,33 @@ export const idlService = IDL.Service({
       [],
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64, IDL.Float64))],
       ['query'],
+    ),
+  'updateDispatchRecord' : IDL.Func(
+      [
+        IDL.Nat,
+        IDL.Text,
+        IDL.Text,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+      ],
+      [IDL.Bool],
+      [],
+    ),
+  'updateItemMaster' : IDL.Func(
+      [
+        IDL.Nat,
+        IDL.Text,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+        IDL.Float64,
+      ],
+      [IDL.Bool],
+      [],
     ),
   'updateOverlockRecord' : IDL.Func(
       [
@@ -162,6 +251,25 @@ export const idlService = IDL.Service({
 export const idlInitArgs = [];
 
 export const idlFactory = ({ IDL }) => {
+  const DispatchRecord = IDL.Record({
+    'id' : IDL.Nat,
+    'date' : IDL.Text,
+    'finalPayment' : IDL.Float64,
+    'articleNo' : IDL.Text,
+    'salePrice' : IDL.Float64,
+    'dispatchQuantity' : IDL.Float64,
+    'percentage' : IDL.Float64,
+  });
+  const ItemMaster = IDL.Record({
+    'id' : IDL.Nat,
+    'sizeXXL' : IDL.Float64,
+    'sizeL' : IDL.Float64,
+    'sizeM' : IDL.Float64,
+    'sizeS' : IDL.Float64,
+    'articleNo' : IDL.Text,
+    'sizeXL' : IDL.Float64,
+    'totalQuantity' : IDL.Float64,
+  });
   const OverlockRecord = IDL.Record({
     'id' : IDL.Nat,
     'finalAmount' : IDL.Float64,
@@ -180,8 +288,8 @@ export const idlFactory = ({ IDL }) => {
     'rate' : IDL.Float64,
     'totalPcs' : IDL.Float64,
     'articleNo' : IDL.Text,
-    'masterName' : IDL.Text,
     'cutByMaster' : IDL.Float64,
+    'partyName' : IDL.Text,
     'percentage' : IDL.Float64,
   });
   const TailorRecord = IDL.Record({
@@ -197,6 +305,31 @@ export const idlFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
+    'addDispatchRecord' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+        ],
+        [IDL.Nat],
+        [],
+      ),
+    'addItemMaster' : IDL.Func(
+        [
+          IDL.Text,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+        ],
+        [IDL.Nat],
+        [],
+      ),
     'addOverlockRecord' : IDL.Func(
         [
           IDL.Text,
@@ -239,14 +372,43 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Nat],
         [],
       ),
+    'deleteDispatchRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+    'deleteItemMaster' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'deleteOverlockRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'deleteRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
     'deleteTailorRecord' : IDL.Func([IDL.Nat], [IDL.Bool], []),
+    'getArticleRemainingBySize' : IDL.Func(
+        [IDL.Text],
+        [
+          IDL.Opt(
+            IDL.Tuple(
+              IDL.Float64,
+              IDL.Float64,
+              IDL.Float64,
+              IDL.Float64,
+              IDL.Float64,
+            )
+          ),
+        ],
+        ['query'],
+      ),
     'getArticleReport' : IDL.Func(
         [],
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64))],
         ['query'],
       ),
+    'getDispatchRecords' : IDL.Func([], [IDL.Vec(DispatchRecord)], ['query']),
+    'getDispatchedQtyByArticle' : IDL.Func(
+        [IDL.Text],
+        [IDL.Float64],
+        ['query'],
+      ),
+    'getItemMasterByArticle' : IDL.Func(
+        [IDL.Text],
+        [IDL.Opt(ItemMaster)],
+        ['query'],
+      ),
+    'getItemMasters' : IDL.Func([], [IDL.Vec(ItemMaster)], ['query']),
     'getMasterNames' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
     'getMasterReport' : IDL.Func(
         [],
@@ -265,6 +427,33 @@ export const idlFactory = ({ IDL }) => {
         [],
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64, IDL.Float64))],
         ['query'],
+      ),
+    'updateDispatchRecord' : IDL.Func(
+        [
+          IDL.Nat,
+          IDL.Text,
+          IDL.Text,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+        ],
+        [IDL.Bool],
+        [],
+      ),
+    'updateItemMaster' : IDL.Func(
+        [
+          IDL.Nat,
+          IDL.Text,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+          IDL.Float64,
+        ],
+        [IDL.Bool],
+        [],
       ),
     'updateOverlockRecord' : IDL.Func(
         [

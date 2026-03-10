@@ -1,10 +1,11 @@
 import {
-  BookOpen,
   ClipboardList,
   IndianRupee,
   Layers,
+  Package,
   PlusSquare,
   Scissors,
+  Send,
   Users,
 } from "lucide-react";
 import type { TabId } from "../App";
@@ -34,10 +35,10 @@ const NAV_ITEMS: Array<{
     ocid: "nav.master_report_tab",
   },
   {
-    id: "article_report",
-    label: "Articles",
-    icon: BookOpen,
-    ocid: "nav.article_report_tab",
+    id: "item_master",
+    label: "Items",
+    icon: Package,
+    ocid: "nav.item_master_tab",
   },
   {
     id: "payment",
@@ -57,6 +58,12 @@ const NAV_ITEMS: Array<{
     icon: Layers,
     ocid: "nav.overlock_tab",
   },
+  {
+    id: "dispatch",
+    label: "Dispatch",
+    icon: Send,
+    ocid: "nav.dispatch_tab",
+  },
 ];
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
@@ -71,7 +78,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         boxShadow: "0 -2px 12px oklch(0.4 0.05 220 / 0.08)",
       }}
     >
-      <div className="flex h-full">
+      <div className="flex h-full overflow-x-auto scrollbar-hide">
         {NAV_ITEMS.map(({ id, label, icon: Icon, ocid }) => {
           const isActive = activeTab === id;
           return (
@@ -80,8 +87,10 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
               type="button"
               data-ocid={ocid}
               onClick={() => onTabChange(id)}
-              className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors px-0.5"
+              className="flex-shrink-0 flex flex-col items-center justify-center gap-0.5 transition-colors"
               style={{
+                minWidth: "56px",
+                padding: "0 4px",
                 color: isActive
                   ? "oklch(var(--primary))"
                   : "oklch(var(--muted-foreground))",
@@ -104,11 +113,12 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
               </div>
               <span
                 style={{
-                  fontSize: "9px",
+                  fontSize: "8px",
                   fontWeight: isActive ? 700 : 500,
                   letterSpacing: "0.01em",
                   fontFamily: "Cabinet Grotesk, sans-serif",
                   lineHeight: 1.2,
+                  whiteSpace: "nowrap",
                 }}
               >
                 {label}

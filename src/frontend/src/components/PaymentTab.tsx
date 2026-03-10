@@ -181,13 +181,13 @@ function PaymentContent({ onLock }: { onLock: () => void }) {
       { dispatched: number; pending: number; amount: number; count: number }
     >();
     for (const r of filtered) {
-      const existing = map.get(r.masterName) ?? {
+      const existing = map.get(r.partyName) ?? {
         dispatched: 0,
         pending: 0,
         amount: 0,
         count: 0,
       };
-      map.set(r.masterName, {
+      map.set(r.partyName, {
         dispatched: existing.dispatched + r.dispatchedPcs,
         pending: existing.pending + r.totalPcs,
         amount: existing.amount + r.finalAmount,

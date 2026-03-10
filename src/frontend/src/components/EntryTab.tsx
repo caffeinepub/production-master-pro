@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calculator, Package, RotateCcw, Save, TrendingUp } from "lucide-react";
+import { Loader2, RotateCcw, Save } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { useAddRecord } from "../hooks/useQueries";
@@ -40,7 +40,7 @@ function calcResults(form: FormState) {
   const totalPcs = dispatched - cut;
   const finalAmount = (dispatched * rate * percentage) / 100;
 
-  return { totalPcs, amount: finalAmount, finalAmount };
+  return { totalPcs, finalAmount };
 }
 
 export function EntryTab() {
@@ -54,18 +54,13 @@ export function EntryTab() {
     percentage: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
-  const [showResult, setShowResult] = useState(false);
 
   const addRecord = useAddRecord();
-
-  const calc = calcResults(form);
 
   const handleChange = useCallback(
     (field: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
       setErrors((prev) => ({ ...prev, [field]: undefined }));
-      // Auto-recalculate if showing result
-      setShowResult(false);
     },
     [],
   );
@@ -79,26 +74,13 @@ export function EntryTab() {
     if (!form.dispatchedPcs || Number.isNaN(Number(form.dispatchedPcs)))
       newErrors.dispatchedPcs = "Enter valid dispatched pieces";
     if (!form.cutByMaster || Number.isNaN(Number(form.cutByMaster)))
-      newErrors.cutByMaster = "Enter valid cut pieces";
+      newErrors.cutByMaster = "Enter valid quantity";
     if (!form.rate || Number.isNaN(Number(form.rate)))
       newErrors.rate = "Enter valid rate";
     if (!form.percentage || Number.isNaN(Number(form.percentage)))
       newErrors.percentage = "Enter valid percentage";
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const handleCalculate = () => {
-    if (
-      form.dispatchedPcs &&
-      form.cutByMaster &&
-      form.rate &&
-      form.percentage
-    ) {
-      setShowResult(true);
-    } else {
-      setShowResult(true);
-    }
   };
 
   const handleSave = async () => {
@@ -138,101 +120,10 @@ export function EntryTab() {
       percentage: "",
     });
     setErrors({});
-    setShowResult(false);
   };
 
   return (
     <div className="px-4 py-4 space-y-4">
-      {/* Result Card */}
-      <div
-        data-ocid="entry.result_card"
-        className="rounded-lg border-2 overflow-hidden"
-        style={{
-          borderColor: showResult
-            ? "oklch(var(--primary))"
-            : "oklch(var(--border))",
-          background: showResult
-            ? "oklch(var(--primary) / 0.06)"
-            : "oklch(var(--muted))",
-          transition: "all 0.2s ease",
-        }}
-      >
-        <div
-          className="px-4 py-3 flex items-center gap-2 border-b"
-          style={{
-            borderColor: showResult
-              ? "oklch(var(--primary) / 0.2)"
-              : "oklch(var(--border))",
-          }}
-        >
-          <TrendingUp
-            className="w-4 h-4"
-            style={{
-              color: showResult
-                ? "oklch(var(--primary))"
-                : "oklch(var(--muted-foreground))",
-            }}
-          />
-          <span
-            className="data-label"
-            style={{ color: showResult ? "oklch(var(--primary))" : undefined }}
-          >
-            Calculation Result
-          </span>
-        </div>
-        <div className="px-4 py-3 grid grid-cols-3 gap-3">
-          <div>
-            <div className="data-label mb-1 flex items-center gap-1">
-              <Package className="w-3 h-3" />
-              Dispatched Pcs
-            </div>
-            <div
-              className="data-value"
-              style={{
-                color: showResult
-                  ? "oklch(var(--foreground))"
-                  : "oklch(var(--muted-foreground))",
-              }}
-            >
-              {showResult
-                ? (Number(form.dispatchedPcs) || 0).toLocaleString()
-                : "—"}
-            </div>
-          </div>
-          <div>
-            <div className="data-label mb-1 flex items-center gap-1">
-              <Package className="w-3 h-3" />
-              Pending Pcs
-            </div>
-            <div
-              className="data-value"
-              style={{
-                color:
-                  showResult && calc.totalPcs >= 0
-                    ? "oklch(var(--primary))"
-                    : "oklch(var(--muted-foreground))",
-              }}
-            >
-              {showResult ? calc.totalPcs.toLocaleString() : "—"}
-            </div>
-          </div>
-          <div>
-            <div className="data-label mb-1">Final Amount</div>
-            <div
-              className="data-value"
-              style={{
-                color:
-                  showResult && calc.finalAmount > 0
-                    ? "oklch(var(--success))"
-                    : "oklch(var(--muted-foreground))",
-              }}
-            >
-              {showResult ? `₨ ${calc.finalAmount.toFixed(2)}` : "—"}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Form */}
       <div className="space-y-3">
         {/* Date */}
@@ -276,7 +167,6 @@ export function EntryTab() {
             onChange={(val) => {
               setForm((prev) => ({ ...prev, articleNo: val }));
               setErrors((prev) => ({ ...prev, articleNo: undefined }));
-              setShowResult(false);
             }}
             hasError={!!errors.articleNo}
           />
@@ -290,7 +180,7 @@ export function EntryTab() {
           )}
         </div>
 
-        {/* Party Name with datalist */}
+        {/* Party Name */}
         <div className="space-y-1">
           <Label htmlFor="entry-master" className="data-label">
             Party Name
@@ -304,7 +194,6 @@ export function EntryTab() {
             onChange={(val) => {
               setForm((prev) => ({ ...prev, masterName: val }));
               setErrors((prev) => ({ ...prev, masterName: undefined }));
-              setShowResult(false);
             }}
             hasError={!!errors.masterName}
           />
@@ -350,7 +239,7 @@ export function EntryTab() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="entry-cut" className="data-label">
-              Pcs Cut by Master
+              Total Quantity
             </Label>
             <Input
               id="entry-cut"
@@ -442,16 +331,6 @@ export function EntryTab() {
       {/* Buttons */}
       <div className="space-y-2 pt-1">
         <Button
-          data-ocid="entry.calculate_button"
-          onClick={handleCalculate}
-          className="w-full btn-factory"
-          size="lg"
-        >
-          <Calculator className="w-5 h-5 mr-2" />
-          Calculate
-        </Button>
-
-        <Button
           data-ocid="entry.save_button"
           onClick={handleSave}
           disabled={addRecord.isPending}
@@ -464,7 +343,7 @@ export function EntryTab() {
         >
           {addRecord.isPending ? (
             <>
-              <span className="w-5 h-5 mr-2 inline-block border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
               Saving...
             </>
           ) : (
@@ -526,7 +405,7 @@ export function EntryTab() {
         >
           Calculation Formula
         </div>
-        <div>Pending Pcs = Dispatched − Cut by Master</div>
+        <div>Pending Pcs = Dispatched − Total Quantity</div>
         <div>Final Amount = Pcs Dispatched × Rate × Percentage ÷ 100</div>
       </div>
     </div>

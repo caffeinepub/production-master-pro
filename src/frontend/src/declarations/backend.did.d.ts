@@ -10,6 +10,25 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface DispatchRecord {
+  'id' : bigint,
+  'date' : string,
+  'finalPayment' : number,
+  'articleNo' : string,
+  'salePrice' : number,
+  'dispatchQuantity' : number,
+  'percentage' : number,
+}
+export interface ItemMaster {
+  'id' : bigint,
+  'sizeXXL' : number,
+  'sizeL' : number,
+  'sizeM' : number,
+  'sizeS' : number,
+  'articleNo' : string,
+  'sizeXL' : number,
+  'totalQuantity' : number,
+}
 export interface OverlockRecord {
   'id' : bigint,
   'finalAmount' : number,
@@ -28,8 +47,8 @@ export interface ProductionRecord {
   'rate' : number,
   'totalPcs' : number,
   'articleNo' : string,
-  'masterName' : string,
   'cutByMaster' : number,
+  'partyName' : string,
   'percentage' : number,
 }
 export interface TailorRecord {
@@ -44,6 +63,14 @@ export interface TailorRecord {
   'quantity' : number,
 }
 export interface _SERVICE {
+  'addDispatchRecord' : ActorMethod<
+    [string, string, number, number, number, number],
+    bigint
+  >,
+  'addItemMaster' : ActorMethod<
+    [string, number, number, number, number, number, number],
+    bigint
+  >,
   'addOverlockRecord' : ActorMethod<
     [string, string, string, string, number, number, number],
     bigint
@@ -56,10 +83,20 @@ export interface _SERVICE {
     [string, string, string, string, string, number, number, number],
     bigint
   >,
+  'deleteDispatchRecord' : ActorMethod<[bigint], boolean>,
+  'deleteItemMaster' : ActorMethod<[bigint], boolean>,
   'deleteOverlockRecord' : ActorMethod<[bigint], boolean>,
   'deleteRecord' : ActorMethod<[bigint], boolean>,
   'deleteTailorRecord' : ActorMethod<[bigint], boolean>,
+  'getArticleRemainingBySize' : ActorMethod<
+    [string],
+    [] | [[number, number, number, number, number]]
+  >,
   'getArticleReport' : ActorMethod<[], Array<[string, number]>>,
+  'getDispatchRecords' : ActorMethod<[], Array<DispatchRecord>>,
+  'getDispatchedQtyByArticle' : ActorMethod<[string], number>,
+  'getItemMasterByArticle' : ActorMethod<[string], [] | [ItemMaster]>,
+  'getItemMasters' : ActorMethod<[], Array<ItemMaster>>,
   'getMasterNames' : ActorMethod<[], Array<string>>,
   'getMasterReport' : ActorMethod<[], Array<[string, number, number]>>,
   'getOverlockRecords' : ActorMethod<[], Array<OverlockRecord>>,
@@ -67,6 +104,14 @@ export interface _SERVICE {
   'getRecords' : ActorMethod<[], Array<ProductionRecord>>,
   'getTailorRecords' : ActorMethod<[], Array<TailorRecord>>,
   'getTailorReport' : ActorMethod<[], Array<[string, number, number]>>,
+  'updateDispatchRecord' : ActorMethod<
+    [bigint, string, string, number, number, number, number],
+    boolean
+  >,
+  'updateItemMaster' : ActorMethod<
+    [bigint, string, number, number, number, number, number, number],
+    boolean
+  >,
   'updateOverlockRecord' : ActorMethod<
     [bigint, string, string, string, string, number, number, number],
     boolean

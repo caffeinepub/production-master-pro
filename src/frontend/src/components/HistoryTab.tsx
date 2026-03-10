@@ -111,7 +111,7 @@ export function HistoryTab() {
     setEditForm({
       date: record.date,
       articleNo: record.articleNo,
-      masterName: record.masterName,
+      masterName: record.partyName,
       dispatchedPcs: String(record.dispatchedPcs),
       cutByMaster: String(record.cutByMaster),
       rate: String(record.rate),
@@ -182,7 +182,7 @@ export function HistoryTab() {
     const rows = filteredRecords.map((r) => [
       r.date,
       r.articleNo,
-      r.masterName,
+      r.partyName,
       r.dispatchedPcs,
       r.cutByMaster,
       r.totalPcs,
@@ -555,7 +555,7 @@ function RecordCard({
             className="text-sm font-medium truncate mt-0.5"
             style={{ color: "oklch(var(--foreground))" }}
           >
-            {record.masterName}
+            {record.partyName}
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -650,7 +650,7 @@ function RecordCard({
               <AlertDialogTitle>Delete Record?</AlertDialogTitle>
               <AlertDialogDescription>
                 This will permanently delete the record for{" "}
-                <strong>{record.articleNo}</strong> — {record.masterName} (
+                <strong>{record.articleNo}</strong> — {record.partyName} (
                 {record.date}). This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>

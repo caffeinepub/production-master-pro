@@ -107,8 +107,8 @@ export interface ProductionRecord {
     rate: number;
     totalPcs: number;
     articleNo: string;
-    masterName: string;
     cutByMaster: number;
+    partyName: string;
     percentage: number;
 }
 export interface TailorRecord {
@@ -122,14 +122,42 @@ export interface TailorRecord {
     articleNo: string;
     quantity: number;
 }
+export interface DispatchRecord {
+    id: bigint;
+    date: string;
+    finalPayment: number;
+    articleNo: string;
+    salePrice: number;
+    dispatchQuantity: number;
+    percentage: number;
+}
+export interface ItemMaster {
+    id: bigint;
+    sizeXXL: number;
+    sizeL: number;
+    sizeM: number;
+    sizeS: number;
+    articleNo: string;
+    sizeXL: number;
+    totalQuantity: number;
+}
 export interface backendInterface {
+    addDispatchRecord(date: string, articleNo: string, dispatchQuantity: number, salePrice: number, percentage: number, finalPayment: number): Promise<bigint>;
+    addItemMaster(articleNo: string, totalQuantity: number, sizeS: number, sizeM: number, sizeL: number, sizeXL: number, sizeXXL: number): Promise<bigint>;
     addOverlockRecord(date: string, articleNo: string, employeeName: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
-    addRecord(date: string, articleNo: string, masterName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<bigint>;
+    addRecord(date: string, articleNo: string, partyName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<bigint>;
     addTailorRecord(date: string, articleNo: string, tailorName: string, color: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<bigint>;
+    deleteDispatchRecord(id: bigint): Promise<boolean>;
+    deleteItemMaster(id: bigint): Promise<boolean>;
     deleteOverlockRecord(id: bigint): Promise<boolean>;
     deleteRecord(id: bigint): Promise<boolean>;
     deleteTailorRecord(id: bigint): Promise<boolean>;
+    getArticleRemainingBySize(articleNo: string): Promise<[number, number, number, number, number] | null>;
     getArticleReport(): Promise<Array<[string, number]>>;
+    getDispatchRecords(): Promise<Array<DispatchRecord>>;
+    getDispatchedQtyByArticle(articleNo: string): Promise<number>;
+    getItemMasterByArticle(articleNo: string): Promise<ItemMaster | null>;
+    getItemMasters(): Promise<Array<ItemMaster>>;
     getMasterNames(): Promise<Array<string>>;
     getMasterReport(): Promise<Array<[string, number, number]>>;
     getOverlockRecords(): Promise<Array<OverlockRecord>>;
@@ -137,12 +165,43 @@ export interface backendInterface {
     getRecords(): Promise<Array<ProductionRecord>>;
     getTailorRecords(): Promise<Array<TailorRecord>>;
     getTailorReport(): Promise<Array<[string, number, number]>>;
+    updateDispatchRecord(id: bigint, date: string, articleNo: string, dispatchQuantity: number, salePrice: number, percentage: number, finalPayment: number): Promise<boolean>;
+    updateItemMaster(id: bigint, articleNo: string, totalQuantity: number, sizeS: number, sizeM: number, sizeL: number, sizeXL: number, sizeXXL: number): Promise<boolean>;
     updateOverlockRecord(id: bigint, date: string, articleNo: string, employeeName: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<boolean>;
-    updateRecord(id: bigint, date: string, articleNo: string, masterName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<boolean>;
+    updateRecord(id: bigint, date: string, articleNo: string, partyName: string, dispatchedPcs: number, cutByMaster: number, rate: number, percentage: number, totalPcs: number, finalAmount: number): Promise<boolean>;
     updateTailorRecord(id: bigint, date: string, articleNo: string, tailorName: string, color: string, size: string, quantity: number, pcsRate: number, finalAmount: number): Promise<boolean>;
 }
+import type { ItemMaster as _ItemMaster } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
+    async addDispatchRecord(arg0: string, arg1: string, arg2: number, arg3: number, arg4: number, arg5: number): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addDispatchRecord(arg0, arg1, arg2, arg3, arg4, arg5);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addDispatchRecord(arg0, arg1, arg2, arg3, arg4, arg5);
+            return result;
+        }
+    }
+    async addItemMaster(arg0: string, arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addItemMaster(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addItemMaster(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+            return result;
+        }
+    }
     async addOverlockRecord(arg0: string, arg1: string, arg2: string, arg3: string, arg4: number, arg5: number, arg6: number): Promise<bigint> {
         if (this.processError) {
             try {
@@ -182,6 +241,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.addTailorRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+            return result;
+        }
+    }
+    async deleteDispatchRecord(arg0: bigint): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteDispatchRecord(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteDispatchRecord(arg0);
+            return result;
+        }
+    }
+    async deleteItemMaster(arg0: bigint): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteItemMaster(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteItemMaster(arg0);
             return result;
         }
     }
@@ -227,6 +314,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getArticleRemainingBySize(arg0: string): Promise<[number, number, number, number, number] | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getArticleRemainingBySize(arg0);
+                return from_candid_opt_n1(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getArticleRemainingBySize(arg0);
+            return from_candid_opt_n1(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getArticleReport(): Promise<Array<[string, number]>> {
         if (this.processError) {
             try {
@@ -238,6 +339,62 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getArticleReport();
+            return result;
+        }
+    }
+    async getDispatchRecords(): Promise<Array<DispatchRecord>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getDispatchRecords();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getDispatchRecords();
+            return result;
+        }
+    }
+    async getDispatchedQtyByArticle(arg0: string): Promise<number> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getDispatchedQtyByArticle(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getDispatchedQtyByArticle(arg0);
+            return result;
+        }
+    }
+    async getItemMasterByArticle(arg0: string): Promise<ItemMaster | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getItemMasterByArticle(arg0);
+                return from_candid_opt_n2(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getItemMasterByArticle(arg0);
+            return from_candid_opt_n2(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getItemMasters(): Promise<Array<ItemMaster>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getItemMasters();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getItemMasters();
             return result;
         }
     }
@@ -339,6 +496,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async updateDispatchRecord(arg0: bigint, arg1: string, arg2: string, arg3: number, arg4: number, arg5: number, arg6: number): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateDispatchRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateDispatchRecord(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
+            return result;
+        }
+    }
+    async updateItemMaster(arg0: bigint, arg1: string, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number, arg7: number): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateItemMaster(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateItemMaster(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+            return result;
+        }
+    }
     async updateOverlockRecord(arg0: bigint, arg1: string, arg2: string, arg3: string, arg4: string, arg5: number, arg6: number, arg7: number): Promise<boolean> {
         if (this.processError) {
             try {
@@ -381,6 +566,12 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+}
+function from_candid_opt_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [[number, number, number, number, number]]): [number, number, number, number, number] | null {
+    return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_ItemMaster]): ItemMaster | null {
+    return value.length === 0 ? null : value[0];
 }
 export interface CreateActorOptions {
     agent?: Agent;

@@ -35,7 +35,7 @@ export function MasterReportTab() {
   // Build article-wise detail for the selected party
   const partyArticleRows = useMemo((): ArticleRow[] => {
     if (!selectedParty) return [];
-    const filtered = allRecords.filter((r) => r.masterName === selectedParty);
+    const filtered = allRecords.filter((r) => r.partyName === selectedParty);
     const articleMap = new Map<
       string,
       { dispatchedPcs: number; pendingPcs: number }
