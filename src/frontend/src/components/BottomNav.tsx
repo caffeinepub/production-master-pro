@@ -1,6 +1,7 @@
 import {
   BarChart3,
   ClipboardList,
+  FileText,
   IndianRupee,
   Package,
   Ruler,
@@ -63,6 +64,12 @@ const NAV_ITEMS: Array<{
     label: "Fabric",
     icon: Ruler,
     ocid: "nav.fabric_planner_tab",
+  },
+  {
+    id: "quote_builder",
+    label: "Quote",
+    icon: FileText,
+    ocid: "nav.quote_builder_tab",
   },
   {
     id: "master_report",

@@ -11,6 +11,7 @@ import { ItemMasterTab } from "./components/ItemMasterTab";
 import { LoginScreen } from "./components/LoginScreen";
 import { MasterReportTab } from "./components/MasterReportTab";
 import { PaymentTab } from "./components/PaymentTab";
+import { QuoteBuilderTab } from "./components/QuoteBuilderTab";
 import { SplashScreen } from "./components/SplashScreen";
 import { TailorTab } from "./components/TailorTab";
 import { useAuth } from "./hooks/useAuth";
@@ -24,7 +25,8 @@ export type TabId =
   | "add_work"
   | "dispatch"
   | "finished_stock"
-  | "fabric_planner";
+  | "fabric_planner"
+  | "quote_builder";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const HOST = typeof window !== "undefined" ? window.location.hostname : "";
@@ -88,6 +90,7 @@ export default function App() {
         {activeTab === "dispatch" && <DispatchTab />}
         {activeTab === "finished_stock" && <FinishedStockTab />}
         {activeTab === "fabric_planner" && <FabricPlannerTab />}
+        {activeTab === "quote_builder" && <QuoteBuilderTab />}
 
         <footer className="px-4 py-4 text-center">
           <a

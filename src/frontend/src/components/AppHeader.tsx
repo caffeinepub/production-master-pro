@@ -30,6 +30,7 @@ const TAB_TITLES: Record<TabId, string> = {
   add_work: "Additional Work",
   finished_stock: "Finished Stock",
   fabric_planner: "Fabric Planner",
+  quote_builder: "Quote Builder",
 };
 
 interface AppHeaderProps {
