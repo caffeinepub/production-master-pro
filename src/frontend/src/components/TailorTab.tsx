@@ -11,8 +11,10 @@ import type {
 } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { loadArticleRates } from "../utils/articleRates";
+import { getFromCache, saveToCache } from "../utils/offlineCache";
 import { exportTailorPdf } from "../utils/pdfExport";
 import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
+import { enqueuePending } from "../utils/syncQueue";
 import { SearchableDropdown } from "./SearchableDropdown";
 
 interface ColorEntry {
@@ -80,15 +82,35 @@ export function TailorTab() {
     (Number.parseFloat(form.tailorRate) || 0);
 
   const loadData = async () => {
+    // 1. Load from cache immediately
+    const cached = await getFromCache<typeof records>(
+      "ProductionMasterCache",
+      "cache",
+      "tailor_cache",
+    );
+    if (cached && cached.length > 0) setRecords(cached);
+
     if (!actor) return;
-    const [recs, itemList, awRecs] = await Promise.all([
-      actor.getTailorRecords().catch(() => []),
-      actor.getItemMasters().catch(() => []),
-      actor.getAdditionalWorkRecords().catch(() => []),
-    ]);
-    setRecords(recs as typeof recs);
-    setItems(itemList as typeof itemList);
-    setAddWorkRecords(awRecs as typeof awRecs);
+    try {
+      const [recs, itemList, awRecs] = await Promise.all([
+        actor.getTailorRecords(),
+        actor.getItemMasters().catch(() => []),
+        actor.getAdditionalWorkRecords().catch(() => []),
+      ]);
+      setRecords(recs as typeof recs);
+      setItems(itemList as typeof itemList);
+      setAddWorkRecords(awRecs as typeof awRecs);
+      saveToCache("ProductionMasterCache", "cache", "tailor_cache", recs).catch(
+        () => {},
+      );
+    } catch {
+      if (!cached || cached.length === 0) return;
+      import("sonner").then(({ toast }) => {
+        toast.info("Showing cached data – server unavailable", {
+          id: "tailor-cached",
+        });
+      });
+    }
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
@@ -254,7 +276,22 @@ export function TailorTab() {
       await loadData();
     } catch (saveErr) {
       console.error("[TailorTab] Backend save error:", saveErr);
-      toast.error(cleanErrorMessage(saveErr));
+      // Enqueue for offline sync
+      if (editId === null) {
+        const pendingData = {
+          date: form.date,
+          articleNo: form.articleNo,
+          tailorName: form.tailorName,
+          pcsGiven: pcs,
+          tailorRate: rate,
+          color: form.color,
+          size: form.size,
+        };
+        enqueuePending("tailor", pendingData);
+        toast.warning("Saved offline – will sync when server is available");
+      } else {
+        toast.error(cleanErrorMessage(saveErr));
+      }
     } finally {
       setLoading(false);
     }

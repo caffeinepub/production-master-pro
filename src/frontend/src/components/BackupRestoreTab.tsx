@@ -31,6 +31,13 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useActor } from "../hooks/useActor";
+import {
+  getLastSyncTime,
+  getPendingCount,
+  getPendingQueue,
+  markSynced,
+  removeSynced,
+} from "../utils/syncQueue";
 
 const LS_LAST_BACKUP = "sg9_last_backup";
 const LS_LAST_AUTO = "sg9_last_auto_backup_date";
@@ -103,6 +110,146 @@ export function BackupRestoreTab() {
   const [backupJson, setBackupJson] = useState<string | null>(null);
   const [showShareBtn, setShowShareBtn] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sync Now state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(() => getPendingCount());
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<Date | null>(() =>
+    getLastSyncTime(),
+  );
+
+  const refreshPendingCount = () => {
+    setPendingCount(getPendingCount());
+    setLastSyncTime(getLastSyncTime());
+  };
+
+  const handleSyncNow = async () => {
+    if (!actor) {
+      toast.error("Not connected to server");
+      return;
+    }
+    const pending = getPendingQueue();
+    if (pending.length === 0) {
+      toast.success("All records are already synced");
+      return;
+    }
+    setIsSyncing(true);
+    setSyncMessage(`Syncing ${pending.length} records...`);
+    let synced = 0;
+    let failed = 0;
+    for (const entry of pending) {
+      if (entry.synced) continue;
+      try {
+        if (entry.module === "item_master") {
+          const d = entry.data as {
+            articleNo: string;
+            totalQuantity: number;
+            colorSizeData: string;
+            workTypes: string;
+            hasAdditionalWork: boolean;
+          };
+          await actor.addItemMaster(
+            d.articleNo,
+            d.totalQuantity,
+            "",
+            d.hasAdditionalWork,
+            d.workTypes,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            d.colorSizeData,
+          );
+        } else if (entry.module === "tailor") {
+          const d = entry.data as {
+            date: string;
+            articleNo: string;
+            tailorName: string;
+            pcsGiven: number;
+            tailorRate: number;
+            color: string;
+            size: string;
+          };
+          await actor.addTailorRecord(
+            d.date,
+            d.articleNo,
+            d.tailorName,
+            d.pcsGiven,
+            d.tailorRate,
+            d.pcsGiven * d.tailorRate,
+            d.color,
+            d.size,
+          );
+        } else if (entry.module === "additional_work") {
+          const d = entry.data as {
+            date: string;
+            articleNo: string;
+            workType: string;
+            employeeName: string;
+            pcsDone: number;
+            ratePerPcs: number;
+            color: string;
+            size: string;
+          };
+          await actor.addAdditionalWorkRecord(
+            d.date,
+            d.articleNo,
+            d.workType,
+            d.employeeName,
+            d.pcsDone,
+            d.ratePerPcs,
+            d.color,
+            d.size,
+          );
+        } else if (entry.module === "dispatch") {
+          const d = entry.data as {
+            articleNo: string;
+            partyName: string;
+            dispatchDate: string;
+            dispatchPcs: number;
+            salePrice: number;
+            percentage: number;
+          };
+          await actor.addDispatchRecord(
+            d.articleNo,
+            d.partyName,
+            d.dispatchDate,
+            d.dispatchPcs,
+            d.salePrice,
+            d.percentage,
+            "",
+            "",
+          );
+        }
+        markSynced(entry.id);
+        synced++;
+      } catch {
+        failed++;
+      }
+    }
+    removeSynced();
+    setIsSyncing(false);
+    const newLastSync = new Date();
+    localStorage.setItem("last_sync_time", newLastSync.toISOString());
+    setLastSyncTime(newLastSync);
+    refreshPendingCount();
+    if (synced > 0 && failed === 0) {
+      setSyncMessage(`All ${synced} records synced successfully`);
+      toast.success("All records synced successfully");
+    } else if (synced > 0) {
+      setSyncMessage(`${synced} synced, ${failed} failed`);
+      toast.warning(`${synced} synced, ${failed} still pending`);
+    } else {
+      setSyncMessage("Sync failed – server may be unavailable");
+      toast.error("Sync failed – server unavailable");
+    }
+  };
 
   // Daily auto-backup
   useEffect(() => {
@@ -867,6 +1014,83 @@ export function BackupRestoreTab() {
             <p>• Payment Records</p>
             <p>• Stock Summary</p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Sync Now Card */}
+      <Card
+        style={{
+          background: "oklch(var(--card))",
+          borderColor: "oklch(var(--border))",
+        }}
+      >
+        <CardHeader className="pb-2">
+          <CardTitle
+            className="text-sm flex items-center gap-2"
+            style={{ color: "oklch(var(--foreground))" }}
+          >
+            <RefreshCw className="w-4 h-4" />
+            Offline Sync
+          </CardTitle>
+          <CardDescription style={{ color: "oklch(var(--muted-foreground))" }}>
+            {pendingCount > 0
+              ? `${pendingCount} record(s) waiting to sync`
+              : "All records are synced"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              data-ocid="backup.sync_now.button"
+              disabled={isSyncing || pendingCount === 0}
+              onClick={handleSyncNow}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                background: "oklch(var(--primary))",
+                color: "oklch(var(--primary-foreground))",
+              }}
+            >
+              {isSyncing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              {isSyncing ? "Syncing..." : "Sync Now"}
+            </button>
+            <button
+              type="button"
+              onClick={refreshPendingCount}
+              className="text-xs px-2 py-1 rounded"
+              style={{
+                color: "oklch(var(--muted-foreground))",
+                border: "1px solid oklch(var(--border))",
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+          {syncMessage && (
+            <p
+              data-ocid="backup.sync_now.success_state"
+              className="text-xs"
+              style={{
+                color: isSyncing
+                  ? "oklch(0.7 0.13 85)"
+                  : "oklch(0.65 0.15 145)",
+              }}
+            >
+              {syncMessage}
+            </p>
+          )}
+          {lastSyncTime && (
+            <p
+              className="text-xs"
+              style={{ color: "oklch(var(--muted-foreground))" }}
+            >
+              Last synced: {lastSyncTime.toLocaleString()}
+            </p>
+          )}
         </CardContent>
       </Card>
 

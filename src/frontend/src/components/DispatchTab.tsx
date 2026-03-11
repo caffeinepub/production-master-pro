@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { DispatchRecord, ItemMaster } from "../backend";
 import { useActor } from "../hooks/useActor";
+import { getFromCache, saveToCache } from "../utils/offlineCache";
 import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
+import { enqueuePending } from "../utils/syncQueue";
 import { SearchableDropdown } from "./SearchableDropdown";
 
 interface FormState {
@@ -51,13 +53,36 @@ export function DispatchTab() {
   const finalPayment = (pcs * price * pct) / 100;
 
   const loadData = async () => {
+    // 1. Load from cache immediately
+    const cached = await getFromCache<typeof records>(
+      "ProductionMasterCache",
+      "cache",
+      "dispatch_cache",
+    );
+    if (cached && cached.length > 0) setRecords(cached);
+
     if (!actor) return;
-    const [recs, itemList] = await Promise.all([
-      actor.getDispatchRecords().catch(() => []),
-      actor.getItemMasters().catch(() => []),
-    ]);
-    setRecords(recs as typeof recs);
-    setItems(itemList as typeof itemList);
+    try {
+      const [recs, itemList] = await Promise.all([
+        actor.getDispatchRecords(),
+        actor.getItemMasters().catch(() => []),
+      ]);
+      setRecords(recs as typeof recs);
+      setItems(itemList as typeof itemList);
+      saveToCache(
+        "ProductionMasterCache",
+        "cache",
+        "dispatch_cache",
+        recs,
+      ).catch(() => {});
+    } catch {
+      if (!cached || cached.length === 0) return;
+      import("sonner").then(({ toast }) => {
+        toast.info("Showing cached data – server unavailable", {
+          id: "dispatch-cached",
+        });
+      });
+    }
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
@@ -164,7 +189,20 @@ export function DispatchTab() {
       await loadData();
     } catch (saveErr) {
       console.error("[DispatchTab] Backend save error:", saveErr);
-      toast.error(cleanErrorMessage(saveErr));
+      if (editId === null) {
+        const pendingData = {
+          articleNo: form.articleNo,
+          partyName: form.partyName,
+          dispatchDate: form.dispatchDate,
+          dispatchPcs: pcs,
+          salePrice: price,
+          percentage: pct,
+        };
+        enqueuePending("dispatch", pendingData);
+        toast.warning("Saved offline – will sync when server is available");
+      } else {
+        toast.error(cleanErrorMessage(saveErr));
+      }
     } finally {
       setLoading(false);
     }

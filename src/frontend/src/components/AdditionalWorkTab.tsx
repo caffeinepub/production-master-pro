@@ -7,8 +7,10 @@ import { toast } from "sonner";
 import type { AdditionalWorkRecord, ItemMaster } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { getRateForWorkType, loadArticleRates } from "../utils/articleRates";
+import { getFromCache, saveToCache } from "../utils/offlineCache";
 import { exportAdditionalWorkPdf } from "../utils/pdfExport";
 import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
+import { enqueuePending } from "../utils/syncQueue";
 import { SearchableDropdown } from "./SearchableDropdown";
 
 const DEFAULT_WORK_TYPES = [
@@ -142,13 +144,36 @@ export function AdditionalWorkTab() {
     (Number.parseFloat(form.ratePerPcs) || 0);
 
   const loadData = async () => {
+    // 1. Load from cache immediately
+    const cached = await getFromCache<typeof records>(
+      "ProductionMasterCache",
+      "cache",
+      "additional_work_cache",
+    );
+    if (cached && cached.length > 0) setRecords(cached);
+
     if (!actor) return;
-    const [recs, itemList] = await Promise.all([
-      actor.getAdditionalWorkRecords().catch(() => []),
-      actor.getItemMasters().catch(() => []),
-    ]);
-    setRecords(recs as typeof recs);
-    setItems(itemList as typeof itemList);
+    try {
+      const [recs, itemList] = await Promise.all([
+        actor.getAdditionalWorkRecords(),
+        actor.getItemMasters().catch(() => []),
+      ]);
+      setRecords(recs as typeof recs);
+      setItems(itemList as typeof itemList);
+      saveToCache(
+        "ProductionMasterCache",
+        "cache",
+        "additional_work_cache",
+        recs,
+      ).catch(() => {});
+    } catch {
+      if (!cached || cached.length === 0) return;
+      import("sonner").then(({ toast }) => {
+        toast.info("Showing cached data – server unavailable", {
+          id: "work-cached",
+        });
+      });
+    }
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
@@ -608,7 +633,22 @@ export function AdditionalWorkTab() {
       await loadData();
     } catch (saveErr) {
       console.error("[AdditionalWorkTab] Backend save error:", saveErr);
-      toast.error(cleanErrorMessage(saveErr));
+      if (editId === null) {
+        const pendingData = {
+          date: form.date,
+          articleNo: form.articleNo,
+          workType: form.workType,
+          employeeName: form.employeeName,
+          pcsDone: Number.parseFloat(form.pcsDone) || 0,
+          ratePerPcs: Number.parseFloat(form.ratePerPcs) || 0,
+          color: form.color,
+          size: form.size,
+        };
+        enqueuePending("additional_work", pendingData);
+        toast.warning("Saved offline – will sync when server is available");
+      } else {
+        toast.error(cleanErrorMessage(saveErr));
+      }
     } finally {
       setLoading(false);
     }

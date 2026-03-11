@@ -63,28 +63,23 @@ function isTransientError(err: unknown): boolean {
 }
 
 /**
- * Retries an async function up to `maxRetries` times with exponential backoff.
- * - Attempt 1: immediate
- * - Attempt 2: 2s delay
- * - Attempt 3: 5s delay
- * - Attempt 4: 10s delay
- * - Attempt 5: 20s delay
+ * Retries an async function up to 5 times with increasing delays.
+ * Delays between attempts: 3s, 5s, 8s, 12s (first attempt is immediate).
  *
  * Shows a toast while retrying. Throws a clean error on final failure.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries = 5,
-  _delayMs = 2000, // kept for backward-compat, not used directly
+  _delayMs = 3000, // kept for backward-compat
 ): Promise<T> {
-  // Exponential delays in ms
-  const delays = [0, 2000, 5000, 10000, 20000];
+  // Delays before each retry attempt (index 0 = first attempt, no delay)
+  const delays = [0, 3000, 5000, 8000, 12000];
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      // Wait before retrying (0 delay on first attempt)
       if (attempt > 0) {
-        const delay = delays[attempt] ?? 20000;
+        const delay = delays[attempt] ?? 12000;
         toast.loading(
           `Server is busy right now. Retrying automatically... (attempt ${attempt}/${maxRetries - 1})`,
           { id: "retry-toast", duration: delay + 1000 },
@@ -93,7 +88,6 @@ export async function withRetry<T>(
       }
 
       const result = await fn();
-      // Dismiss any retry toast on success
       if (attempt > 0) toast.dismiss("retry-toast");
       return result;
     } catch (err) {
@@ -101,18 +95,15 @@ export async function withRetry<T>(
         toast.dismiss("retry-toast");
         throw new Error(cleanErrorMessage(err));
       }
-      // If this was the last attempt, give up
       if (attempt === maxRetries - 1) {
         toast.dismiss("retry-toast");
         throw new Error(
           "Server is currently overloaded. Please wait a moment and try again.",
         );
       }
-      // Otherwise loop to next attempt
     }
   }
 
-  // Should never reach here
   throw new Error(
     "Server is currently overloaded. Please wait a moment and try again.",
   );
@@ -120,14 +111,12 @@ export async function withRetry<T>(
 
 /**
  * Warms up the canister by making a lightweight query call.
- * This helps wake up an idle canister before running an update call.
  */
 export async function warmupCanister(
   actor: Record<string, (...args: unknown[]) => Promise<unknown>> | null,
 ): Promise<void> {
   if (!actor) return;
   try {
-    // Use a lightweight query to wake the canister
     if (typeof actor.getItemMasters === "function") {
       await Promise.race([
         actor.getItemMasters(),
@@ -137,6 +126,6 @@ export async function warmupCanister(
       ]);
     }
   } catch {
-    // Warmup failure is non-critical; proceed anyway
+    // Warmup failure is non-critical
   }
 }

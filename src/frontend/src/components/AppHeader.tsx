@@ -19,6 +19,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import type { TabId } from "../App";
 import { useActor } from "../hooks/useActor";
+import { SyncStatusIndicator } from "./SyncStatusIndicator";
 
 const TAB_TITLES: Record<TabId, string> = {
   history: "Production History",
@@ -49,7 +50,6 @@ export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
     if (!actor) return;
     setErasing(true);
     try {
-      // Fetch and delete all records in parallel
       const [items, tailorRecords, dispatchRecords, workRecords] =
         await Promise.all([
           actor.getItemMasters(),
@@ -65,7 +65,6 @@ export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
         ...workRecords.map((r) => actor.deleteAdditionalWorkRecord(r.id)),
       ]);
 
-      // Clear localStorage keys for rates and fabric units
       const keysToRemove = Object.keys(localStorage).filter(
         (k) => k.startsWith("articleRates_") || k.startsWith("fabricUnit_"),
       );
@@ -92,13 +91,13 @@ export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
       style={{ maxWidth: "var(--app-max-width)" }}
     >
       <div
-        className="flex items-center gap-3 px-4 h-[60px]"
+        className="flex items-center gap-2 px-4 h-[60px]"
         style={{
           background: "oklch(var(--primary))",
           boxShadow: "0 2px 8px oklch(0.28 0.07 220 / 0.4)",
         }}
       >
-        <div className="flex items-center justify-center w-8 h-8 rounded bg-white/15">
+        <div className="flex items-center justify-center w-8 h-8 rounded bg-white/15 shrink-0">
           <Factory className="w-4 h-4 text-white" strokeWidth={2.5} />
         </div>
         <div className="flex flex-col min-w-0 flex-1">
@@ -122,13 +121,18 @@ export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
           </span>
         </div>
 
+        {/* Sync Status Indicator */}
+        <div className="shrink-0">
+          <SyncStatusIndicator />
+        </div>
+
         {/* Settings / Profile Dialog */}
         <Dialog open={open} onOpenChange={handleOpenChange}>
           <DialogTrigger asChild>
             <button
               type="button"
               data-ocid="settings.open_modal_button"
-              className="flex items-center justify-center w-8 h-8 rounded bg-white/15 hover:bg-white/25 transition-colors"
+              className="flex items-center justify-center w-8 h-8 rounded bg-white/15 hover:bg-white/25 transition-colors shrink-0"
               aria-label="Settings"
             >
               <Settings className="w-4 h-4 text-white" />

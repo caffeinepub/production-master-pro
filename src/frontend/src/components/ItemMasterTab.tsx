@@ -11,7 +11,9 @@ import {
   loadArticleRates,
   saveArticleRates,
 } from "../utils/articleRates";
+import { getFromCache, saveToCache } from "../utils/offlineCache";
 import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
+import { enqueuePending } from "../utils/syncQueue";
 import { DashboardAlerts } from "./DashboardAlerts";
 
 const ALL_SIZES = [
@@ -128,9 +130,36 @@ export function ItemMasterTab() {
   );
 
   const loadItems = async () => {
+    // 1. Load from cache immediately for instant render
+    const cached = await getFromCache<typeof items>(
+      "ProductionMasterCache",
+      "cache",
+      "items_cache",
+    );
+    if (cached && cached.length > 0) {
+      setItems(cached);
+    }
+    // 2. Fetch from backend in background
     if (!actor) return;
-    const data = await actor.getItemMasters().catch(() => []);
-    setItems(data as typeof data);
+    try {
+      const data = await actor.getItemMasters();
+      setItems(data as typeof data);
+      // Save to cache on success (fire-and-forget)
+      saveToCache("ProductionMasterCache", "cache", "items_cache", data).catch(
+        () => {},
+      );
+    } catch {
+      if (!cached || cached.length === 0) {
+        // No cache either — nothing to show
+      } else {
+        // Show cached data silently (toast only if first time seeing server error)
+        import("sonner").then(({ toast }) => {
+          toast.info("Showing cached data – server unavailable", {
+            id: "items-cached",
+          });
+        });
+      }
+    }
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
@@ -234,7 +263,25 @@ export function ItemMasterTab() {
       }
     } catch (saveErr) {
       console.error("[ItemMaster] Backend save error:", saveErr);
-      toast.error(cleanErrorMessage(saveErr));
+      // Enqueue for offline sync and add to local UI
+      if (editId === null) {
+        const pendingData = {
+          articleNo: form.articleNo.trim(),
+          totalQuantity: totalQtyNum,
+          colorSizeData: JSON.stringify(
+            form.colorEntries.map((ce) => ({
+              color: ce.color,
+              sizes: ce.sizes,
+            })),
+          ),
+          workTypes: form.selectedWorkTypes.join(","),
+          hasAdditionalWork: form.hasAdditionalWork,
+        };
+        enqueuePending("item_master", pendingData);
+        toast.warning("Saved offline – will sync when server is available");
+      } else {
+        toast.error(cleanErrorMessage(saveErr));
+      }
       setLoading(false);
       return;
     }
