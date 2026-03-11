@@ -12,6 +12,7 @@ import type {
 import { useActor } from "../hooks/useActor";
 import { loadArticleRates } from "../utils/articleRates";
 import { exportTailorPdf } from "../utils/pdfExport";
+import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
 import { SearchableDropdown } from "./SearchableDropdown";
 
 interface ColorEntry {
@@ -218,28 +219,32 @@ export function TailorTab() {
 
       const amount = pcs * rate;
       if (editId !== null) {
-        await actor.updateTailorRecord(
-          editId,
-          form.date,
-          form.articleNo,
-          form.tailorName,
-          pcs,
-          rate,
-          amount,
-          form.color,
-          form.size,
+        await withRetry(() =>
+          actor.updateTailorRecord(
+            editId,
+            form.date,
+            form.articleNo,
+            form.tailorName,
+            pcs,
+            rate,
+            amount,
+            form.color,
+            form.size,
+          ),
         );
         toast.success("Record updated");
       } else {
-        await actor.addTailorRecord(
-          form.date,
-          form.articleNo,
-          form.tailorName,
-          pcs,
-          rate,
-          amount,
-          form.color,
-          form.size,
+        await withRetry(() =>
+          actor.addTailorRecord(
+            form.date,
+            form.articleNo,
+            form.tailorName,
+            pcs,
+            rate,
+            amount,
+            form.color,
+            form.size,
+          ),
         );
         toast.success("Record saved");
       }
@@ -247,8 +252,9 @@ export function TailorTab() {
       setEditId(null);
       setShowForm(false);
       await loadData();
-    } catch {
-      toast.error("Failed to save tailor record");
+    } catch (saveErr) {
+      console.error("[TailorTab] Backend save error:", saveErr);
+      toast.error(cleanErrorMessage(saveErr));
     } finally {
       setLoading(false);
     }

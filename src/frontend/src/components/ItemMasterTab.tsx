@@ -11,6 +11,7 @@ import {
   loadArticleRates,
   saveArticleRates,
 } from "../utils/articleRates";
+import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
 import { DashboardAlerts } from "./DashboardAlerts";
 
 const ALL_SIZES = [
@@ -185,23 +186,25 @@ export function ItemMasterTab() {
     try {
       // --- backend call only (isolated so post-save ops don't trigger this catch) ---
       if (editId !== null) {
-        const ok = await actor.updateItemMaster(
-          editId,
-          form.articleNo.trim(),
-          totalQtyNum,
-          colorsStr,
-          form.hasAdditionalWork,
-          workTypes,
-          flatSizes.XS ?? 0,
-          flatSizes.S ?? 0,
-          flatSizes.M ?? 0,
-          flatSizes.L ?? 0,
-          flatSizes.XL ?? 0,
-          flatSizes.XXL ?? 0,
-          flatSizes["3XL"] ?? 0,
-          flatSizes["4XL"] ?? 0,
-          flatSizes["5XL"] ?? 0,
-          colorSizeData,
+        const ok = await withRetry(() =>
+          actor.updateItemMaster(
+            editId,
+            form.articleNo.trim(),
+            totalQtyNum,
+            colorsStr,
+            form.hasAdditionalWork,
+            workTypes,
+            flatSizes.XS ?? 0,
+            flatSizes.S ?? 0,
+            flatSizes.M ?? 0,
+            flatSizes.L ?? 0,
+            flatSizes.XL ?? 0,
+            flatSizes.XXL ?? 0,
+            flatSizes["3XL"] ?? 0,
+            flatSizes["4XL"] ?? 0,
+            flatSizes["5XL"] ?? 0,
+            colorSizeData,
+          ),
         );
         if (!ok) {
           toast.error("Item not found — could not update");
@@ -209,39 +212,29 @@ export function ItemMasterTab() {
           return;
         }
       } else {
-        await actor.addItemMaster(
-          form.articleNo.trim(),
-          totalQtyNum,
-          colorsStr,
-          form.hasAdditionalWork,
-          workTypes,
-          flatSizes.XS ?? 0,
-          flatSizes.S ?? 0,
-          flatSizes.M ?? 0,
-          flatSizes.L ?? 0,
-          flatSizes.XL ?? 0,
-          flatSizes.XXL ?? 0,
-          flatSizes["3XL"] ?? 0,
-          flatSizes["4XL"] ?? 0,
-          flatSizes["5XL"] ?? 0,
-          colorSizeData,
+        await withRetry(() =>
+          actor.addItemMaster(
+            form.articleNo.trim(),
+            totalQtyNum,
+            colorsStr,
+            form.hasAdditionalWork,
+            workTypes,
+            flatSizes.XS ?? 0,
+            flatSizes.S ?? 0,
+            flatSizes.M ?? 0,
+            flatSizes.L ?? 0,
+            flatSizes.XL ?? 0,
+            flatSizes.XXL ?? 0,
+            flatSizes["3XL"] ?? 0,
+            flatSizes["4XL"] ?? 0,
+            flatSizes["5XL"] ?? 0,
+            colorSizeData,
+          ),
         );
       }
     } catch (saveErr) {
-      // Log real error for debugging
       console.error("[ItemMaster] Backend save error:", saveErr);
-      const msg = saveErr instanceof Error ? saveErr.message : String(saveErr);
-      if (msg.includes("validation") || msg.includes("required")) {
-        toast.error(`Validation error: ${msg}`);
-      } else if (
-        msg.includes("network") ||
-        msg.includes("fetch") ||
-        msg.includes("connect")
-      ) {
-        toast.error("Network error — check your connection and try again");
-      } else {
-        toast.error(`Failed to save item: ${msg}`);
-      }
+      toast.error(cleanErrorMessage(saveErr));
       setLoading(false);
       return;
     }

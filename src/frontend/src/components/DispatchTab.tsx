@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { DispatchRecord, ItemMaster } from "../backend";
 import { useActor } from "../hooks/useActor";
+import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
 import { SearchableDropdown } from "./SearchableDropdown";
 
 interface FormState {
@@ -128,28 +129,32 @@ export function DispatchTab() {
 
     try {
       if (editId !== null) {
-        await actor.updateDispatchRecord(
-          editId,
-          form.articleNo,
-          form.partyName,
-          form.dispatchDate,
-          pcs,
-          price,
-          pct,
-          form.sizeWiseBreakup,
-          form.colorWiseBreakup,
+        await withRetry(() =>
+          actor.updateDispatchRecord(
+            editId,
+            form.articleNo,
+            form.partyName,
+            form.dispatchDate,
+            pcs,
+            price,
+            pct,
+            form.sizeWiseBreakup,
+            form.colorWiseBreakup,
+          ),
         );
         toast.success("Dispatch updated");
       } else {
-        await actor.addDispatchRecord(
-          form.articleNo,
-          form.partyName,
-          form.dispatchDate,
-          pcs,
-          price,
-          pct,
-          form.sizeWiseBreakup,
-          form.colorWiseBreakup,
+        await withRetry(() =>
+          actor.addDispatchRecord(
+            form.articleNo,
+            form.partyName,
+            form.dispatchDate,
+            pcs,
+            price,
+            pct,
+            form.sizeWiseBreakup,
+            form.colorWiseBreakup,
+          ),
         );
         toast.success("Dispatch saved");
       }
@@ -157,8 +162,9 @@ export function DispatchTab() {
       setEditId(null);
       setShowForm(false);
       await loadData();
-    } catch {
-      toast.error("Failed to save dispatch record");
+    } catch (saveErr) {
+      console.error("[DispatchTab] Backend save error:", saveErr);
+      toast.error(cleanErrorMessage(saveErr));
     } finally {
       setLoading(false);
     }

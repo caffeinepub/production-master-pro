@@ -1,21 +1,31 @@
 # Production Master Pro
 
 ## Current State
-The app has a Quote Builder tab with client name, article name, custom work fields, PDF download, and WhatsApp text sharing. Fabric consumption in Item Master supports meters or grams unit selection.
+The app is a full-stack garment factory management system on ICP with Internet Identity auth. Backend uses Motoko stable storage. Frontend uses React + TypeScript. All major tabs (Item Master, Tailor, Additional Work, Dispatch, Payment, Finished Stock, Fabric Planner, Quote Builder) are implemented. The app occasionally fails with IC0508 (canister stopped) and similar transient errors that surface as raw system error messages to the user.
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Quote History / Saved Quotes section** in the Quote Builder tab: every time a quote is generated, save it to localStorage. Show a "Saved Quotes" section below the form where users can view, re-open (load into form), download PDF, share on WhatsApp, or delete old quotes.
-- **Fabric Consumption in KG**: add "KG" as a unit option alongside meters and grams in Item Master and Fabric Planner. Allow decimal values (e.g. 1.25 KG).
+- `retryUtils.ts`: async retry helper with 3 attempts, exponential backoff, and clean error message translation (IC0508 → "Server temporarily busy. Please try again.", reject/replica → "Connection interrupted. Retrying…")
+- `ErrorBoundary.tsx`: React class component catching unhandled render errors, preventing full app crash, showing a "Recover" button
+- Backend try/catch wrappers on all major write methods: addItemMaster, updateItemMaster, addTailorEntry, addAdditionalWorkRecord, addDispatchRecord, addPayment and their update/delete counterparts
+- Loading state and disabled-button protection in all save handlers
+- Input validation in all forms (required fields, no negatives, no empty article names)
 
 ### Modify
-- **WhatsApp sharing**: keep text-based WhatsApp sharing (PDF file attachment is not possible in browser web share API without native support). Improve the shared text format to include full quote breakdown clearly.
-- **Quote data structure**: each saved quote stores client name, article name, work items, total CMT, and date/time of creation.
+- `main.tsx`: wrap `<App />` with `<ErrorBoundary>`
+- `ItemMasterTab.tsx`, `TailorTab.tsx`, `AdditionalWorkTab.tsx`, `DispatchTab.tsx`: replace raw catch blocks with `withRetry()` calls and clean error messages
+- All tab load functions: use `.catch(() => [])` already in place, no change needed — keep as is
+- Error toast messages: replace raw IC error strings with user-friendly equivalents
 
 ### Remove
-- Nothing removed.
+- Raw IC error codes/strings exposed to user (IC0508, reject code, replica rejection)
 
 ## Implementation Plan
-1. In `QuoteBuilderTab.tsx`: on "Generate Quotation", auto-save quote to localStorage (`sg9_saved_quotes`). Add a collapsible "Saved Quotes" section showing saved quotes as cards with View/Download/Share/Delete actions. Add a `loadQuote(quote)` function to restore a quote into the form.
-2. In `ItemMasterTab.tsx` and `FabricPlannerTab.tsx`: add "KG" as third option in the fabric unit selector. Ensure decimal values are supported and stored correctly.
+1. Write `src/frontend/src/utils/retryUtils.ts` with `withRetry<T>(fn, retries=3)` and `cleanErrorMessage(err)` helpers
+2. Write `src/frontend/src/components/ErrorBoundary.tsx`
+3. Update `src/frontend/src/main.tsx` to wrap App with ErrorBoundary
+4. Update ItemMasterTab save handler to use withRetry
+5. Update TailorTab, AdditionalWorkTab, DispatchTab save handlers similarly
+6. Add try/catch to all Motoko backend write methods
+7. Validate and deploy

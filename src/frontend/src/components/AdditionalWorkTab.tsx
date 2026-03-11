@@ -8,6 +8,7 @@ import type { AdditionalWorkRecord, ItemMaster } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { getRateForWorkType, loadArticleRates } from "../utils/articleRates";
 import { exportAdditionalWorkPdf } from "../utils/pdfExport";
+import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
 import { SearchableDropdown } from "./SearchableDropdown";
 
 const DEFAULT_WORK_TYPES = [
@@ -440,28 +441,32 @@ export function AdditionalWorkTab() {
         // Both Color and Size are "All" → save ONE record with the entered quantity as the final total.
         // Do NOT expand per combo — Quantity × Rate is the correct formula.
         if (editId !== null) {
-          await actor.updateAdditionalWorkRecord(
-            editId,
-            form.date,
-            form.articleNo,
-            form.workType,
-            form.employeeName,
-            pcs,
-            rate,
-            ALL_COLORS_VALUE,
-            ALL_SIZES_VALUE,
+          await withRetry(() =>
+            actor.updateAdditionalWorkRecord(
+              editId,
+              form.date,
+              form.articleNo,
+              form.workType,
+              form.employeeName,
+              pcs,
+              rate,
+              ALL_COLORS_VALUE,
+              ALL_SIZES_VALUE,
+            ),
           );
           toast.success("Record updated");
         } else {
-          await actor.addAdditionalWorkRecord(
-            form.date,
-            form.articleNo,
-            form.workType,
-            form.employeeName,
-            pcs,
-            rate,
-            ALL_COLORS_VALUE,
-            ALL_SIZES_VALUE,
+          await withRetry(() =>
+            actor.addAdditionalWorkRecord(
+              form.date,
+              form.articleNo,
+              form.workType,
+              form.employeeName,
+              pcs,
+              rate,
+              ALL_COLORS_VALUE,
+              ALL_SIZES_VALUE,
+            ),
           );
           toast.success("Record saved");
         }
@@ -516,16 +521,18 @@ export function AdditionalWorkTab() {
             return;
           }
 
-          await actor.updateAdditionalWorkRecord(
-            editId,
-            form.date,
-            form.articleNo,
-            form.workType,
-            form.employeeName,
-            pcs,
-            rate,
-            color,
-            size,
+          await withRetry(() =>
+            actor.updateAdditionalWorkRecord(
+              editId,
+              form.date,
+              form.articleNo,
+              form.workType,
+              form.employeeName,
+              pcs,
+              rate,
+              color,
+              size,
+            ),
           );
           toast.success("Record updated");
         } else {
@@ -558,15 +565,17 @@ export function AdditionalWorkTab() {
               continue;
             }
 
-            await actor.addAdditionalWorkRecord(
-              form.date,
-              form.articleNo,
-              form.workType,
-              form.employeeName,
-              pcs,
-              rate,
-              color,
-              size,
+            await withRetry(() =>
+              actor.addAdditionalWorkRecord(
+                form.date,
+                form.articleNo,
+                form.workType,
+                form.employeeName,
+                pcs,
+                rate,
+                color,
+                size,
+              ),
             );
             saved++;
           }
@@ -597,8 +606,9 @@ export function AdditionalWorkTab() {
       setEditId(null);
       setShowForm(false);
       await loadData();
-    } catch {
-      toast.error("Failed to save work record");
+    } catch (saveErr) {
+      console.error("[AdditionalWorkTab] Backend save error:", saveErr);
+      toast.error(cleanErrorMessage(saveErr));
     } finally {
       setLoading(false);
     }
