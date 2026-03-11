@@ -4,6 +4,8 @@ import { AdditionalWorkTab } from "./components/AdditionalWorkTab";
 import { AppHeader } from "./components/AppHeader";
 import { BottomNav } from "./components/BottomNav";
 import { DispatchTab } from "./components/DispatchTab";
+import { FabricPlannerTab } from "./components/FabricPlannerTab";
+import { FinishedStockTab } from "./components/FinishedStockTab";
 import { HistoryTab } from "./components/HistoryTab";
 import { ItemMasterTab } from "./components/ItemMasterTab";
 import { LoginScreen } from "./components/LoginScreen";
@@ -20,7 +22,9 @@ export type TabId =
   | "payment"
   | "tailor"
   | "add_work"
-  | "dispatch";
+  | "dispatch"
+  | "finished_stock"
+  | "fabric_planner";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const HOST = typeof window !== "undefined" ? window.location.hostname : "";
@@ -82,6 +86,8 @@ export default function App() {
         {activeTab === "tailor" && <TailorTab />}
         {activeTab === "add_work" && <AdditionalWorkTab />}
         {activeTab === "dispatch" && <DispatchTab />}
+        {activeTab === "finished_stock" && <FinishedStockTab />}
+        {activeTab === "fabric_planner" && <FabricPlannerTab />}
 
         <footer className="px-4 py-4 text-center">
           <a

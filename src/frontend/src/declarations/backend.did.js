@@ -32,6 +32,18 @@ export const DispatchRecord = IDL.Record({
   'percentage' : IDL.Float64,
   'colorWiseBreakup' : IDL.Text,
 });
+export const FabricConsumptionReport = IDL.Record({
+  'fabricPerPiece' : IDL.Float64,
+  'articleNo' : IDL.Text,
+  'totalCutting' : IDL.Float64,
+  'totalFabricUsed' : IDL.Float64,
+});
+export const FinishedStockSummary = IDL.Record({
+  'totalProduced' : IDL.Float64,
+  'totalDispatched' : IDL.Float64,
+  'available' : IDL.Float64,
+  'articleNo' : IDL.Text,
+});
 export const ItemMaster = IDL.Record({
   'id' : IDL.Nat,
   'size3XL' : IDL.Float64,
@@ -59,6 +71,12 @@ export const OverlockRecord = IDL.Record({
   'size' : IDL.Text,
   'articleNo' : IDL.Text,
   'quantity' : IDL.Float64,
+});
+export const ProductionMismatch = IDL.Record({
+  'cuttingQty' : IDL.Float64,
+  'dispatchedQty' : IDL.Float64,
+  'articleNo' : IDL.Text,
+  'stitchedQty' : IDL.Float64,
 });
 export const ProductionRecord = IDL.Record({
   'id' : IDL.Nat,
@@ -207,8 +225,20 @@ export const idlService = IDL.Service({
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64))],
       ['query'],
     ),
+  'getAvailableStock' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
   'getDispatchRecords' : IDL.Func([], [IDL.Vec(DispatchRecord)], ['query']),
   'getDispatchedQtyByArticle' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
+  'getFabricConsumptionReport' : IDL.Func(
+      [],
+      [IDL.Vec(FabricConsumptionReport)],
+      ['query'],
+    ),
+  'getFabricPerPiece' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
+  'getFinishedStockSummary' : IDL.Func(
+      [],
+      [IDL.Vec(FinishedStockSummary)],
+      ['query'],
+    ),
   'getItemMasterByArticle' : IDL.Func(
       [IDL.Text],
       [IDL.Opt(ItemMaster)],
@@ -232,18 +262,25 @@ export const idlService = IDL.Service({
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64, IDL.Float64))],
       ['query'],
     ),
+  'getProductionMismatches' : IDL.Func(
+      [],
+      [IDL.Vec(ProductionMismatch)],
+      ['query'],
+    ),
   'getProductionRecords' : IDL.Func([], [IDL.Vec(ProductionRecord)], ['query']),
   'getStitchedQtyByColorSize' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Text],
       [IDL.Float64],
       ['query'],
     ),
+  'getTailorQtyByArticle' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
   'getTailorRecords' : IDL.Func([], [IDL.Vec(TailorRecord)], ['query']),
   'getTailorReport' : IDL.Func(
       [],
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64, IDL.Float64))],
       ['query'],
     ),
+  'setFabricPerPiece' : IDL.Func([IDL.Text, IDL.Float64], [], []),
   'updateAdditionalWorkRecord' : IDL.Func(
       [
         IDL.Nat,
@@ -370,6 +407,18 @@ export const idlFactory = ({ IDL }) => {
     'percentage' : IDL.Float64,
     'colorWiseBreakup' : IDL.Text,
   });
+  const FabricConsumptionReport = IDL.Record({
+    'fabricPerPiece' : IDL.Float64,
+    'articleNo' : IDL.Text,
+    'totalCutting' : IDL.Float64,
+    'totalFabricUsed' : IDL.Float64,
+  });
+  const FinishedStockSummary = IDL.Record({
+    'totalProduced' : IDL.Float64,
+    'totalDispatched' : IDL.Float64,
+    'available' : IDL.Float64,
+    'articleNo' : IDL.Text,
+  });
   const ItemMaster = IDL.Record({
     'id' : IDL.Nat,
     'size3XL' : IDL.Float64,
@@ -397,6 +446,12 @@ export const idlFactory = ({ IDL }) => {
     'size' : IDL.Text,
     'articleNo' : IDL.Text,
     'quantity' : IDL.Float64,
+  });
+  const ProductionMismatch = IDL.Record({
+    'cuttingQty' : IDL.Float64,
+    'dispatchedQty' : IDL.Float64,
+    'articleNo' : IDL.Text,
+    'stitchedQty' : IDL.Float64,
   });
   const ProductionRecord = IDL.Record({
     'id' : IDL.Nat,
@@ -545,10 +600,22 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64))],
         ['query'],
       ),
+    'getAvailableStock' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
     'getDispatchRecords' : IDL.Func([], [IDL.Vec(DispatchRecord)], ['query']),
     'getDispatchedQtyByArticle' : IDL.Func(
         [IDL.Text],
         [IDL.Float64],
+        ['query'],
+      ),
+    'getFabricConsumptionReport' : IDL.Func(
+        [],
+        [IDL.Vec(FabricConsumptionReport)],
+        ['query'],
+      ),
+    'getFabricPerPiece' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
+    'getFinishedStockSummary' : IDL.Func(
+        [],
+        [IDL.Vec(FinishedStockSummary)],
         ['query'],
       ),
     'getItemMasterByArticle' : IDL.Func(
@@ -574,6 +641,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64, IDL.Float64))],
         ['query'],
       ),
+    'getProductionMismatches' : IDL.Func(
+        [],
+        [IDL.Vec(ProductionMismatch)],
+        ['query'],
+      ),
     'getProductionRecords' : IDL.Func(
         [],
         [IDL.Vec(ProductionRecord)],
@@ -584,12 +656,14 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Float64],
         ['query'],
       ),
+    'getTailorQtyByArticle' : IDL.Func([IDL.Text], [IDL.Float64], ['query']),
     'getTailorRecords' : IDL.Func([], [IDL.Vec(TailorRecord)], ['query']),
     'getTailorReport' : IDL.Func(
         [],
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64, IDL.Float64))],
         ['query'],
       ),
+    'setFabricPerPiece' : IDL.Func([IDL.Text, IDL.Float64], [], []),
     'updateAdditionalWorkRecord' : IDL.Func(
         [
           IDL.Nat,

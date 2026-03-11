@@ -34,6 +34,18 @@ export interface DispatchRecord {
   'percentage' : number,
   'colorWiseBreakup' : string,
 }
+export interface FabricConsumptionReport {
+  'fabricPerPiece' : number,
+  'articleNo' : string,
+  'totalCutting' : number,
+  'totalFabricUsed' : number,
+}
+export interface FinishedStockSummary {
+  'totalProduced' : number,
+  'totalDispatched' : number,
+  'available' : number,
+  'articleNo' : string,
+}
 export interface ItemMaster {
   'id' : bigint,
   'size3XL' : number,
@@ -61,6 +73,12 @@ export interface OverlockRecord {
   'size' : string,
   'articleNo' : string,
   'quantity' : number,
+}
+export interface ProductionMismatch {
+  'cuttingQty' : number,
+  'dispatchedQty' : number,
+  'articleNo' : string,
+  'stitchedQty' : number,
 }
 export interface ProductionRecord {
   'id' : bigint,
@@ -143,8 +161,15 @@ export interface _SERVICE {
   'getAdditionalWorkRecords' : ActorMethod<[], Array<AdditionalWorkRecord>>,
   'getArticleRemainingQty' : ActorMethod<[string], [] | [number]>,
   'getArticleReport' : ActorMethod<[], Array<[string, number]>>,
+  'getAvailableStock' : ActorMethod<[string], number>,
   'getDispatchRecords' : ActorMethod<[], Array<DispatchRecord>>,
   'getDispatchedQtyByArticle' : ActorMethod<[string], number>,
+  'getFabricConsumptionReport' : ActorMethod<
+    [],
+    Array<FabricConsumptionReport>
+  >,
+  'getFabricPerPiece' : ActorMethod<[string], number>,
+  'getFinishedStockSummary' : ActorMethod<[], Array<FinishedStockSummary>>,
   'getItemMasterByArticle' : ActorMethod<[string], [] | [ItemMaster]>,
   'getItemMasters' : ActorMethod<[], Array<ItemMaster>>,
   'getMasterNames' : ActorMethod<[], Array<string>>,
@@ -152,10 +177,13 @@ export interface _SERVICE {
   'getOverlockRecords' : ActorMethod<[], Array<OverlockRecord>>,
   'getOverlockReport' : ActorMethod<[], Array<[string, number, number]>>,
   'getPaymentSummary' : ActorMethod<[], Array<[string, number, number]>>,
+  'getProductionMismatches' : ActorMethod<[], Array<ProductionMismatch>>,
   'getProductionRecords' : ActorMethod<[], Array<ProductionRecord>>,
   'getStitchedQtyByColorSize' : ActorMethod<[string, string, string], number>,
+  'getTailorQtyByArticle' : ActorMethod<[string], number>,
   'getTailorRecords' : ActorMethod<[], Array<TailorRecord>>,
   'getTailorReport' : ActorMethod<[], Array<[string, number, number]>>,
+  'setFabricPerPiece' : ActorMethod<[string, number], undefined>,
   'updateAdditionalWorkRecord' : ActorMethod<
     [bigint, string, string, string, string, number, number, string, string],
     boolean

@@ -11,6 +11,7 @@ import {
   loadArticleRates,
   saveArticleRates,
 } from "../utils/articleRates";
+import { DashboardAlerts } from "./DashboardAlerts";
 
 const ALL_SIZES = [
   "XS",
@@ -112,6 +113,8 @@ export function ItemMasterTab() {
   const [editId, setEditId] = useState<bigint | null>(null);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [fabricPerPiece, setFabricPerPiece] = useState(0);
+  const [fabricUnit, setFabricUnit] = useState<"meters" | "grams">("meters");
 
   // Color add form state
   const [showColorForm, setShowColorForm] = useState(false);
@@ -244,6 +247,13 @@ export function ItemMasterTab() {
     // --- post-save operations (errors here do NOT show "Failed to save item") ---
     const isUpdate = editId !== null;
     saveArticleRates(form.articleNo, rates);
+    if (fabricPerPiece > 0 && actor) {
+      actor.setFabricPerPiece(form.articleNo, fabricPerPiece).catch(() => {});
+    }
+    // Persist fabric unit to localStorage
+    localStorage.setItem(`fabricUnit_${form.articleNo}`, fabricUnit);
+    setFabricPerPiece(0);
+    setFabricUnit("meters");
     setForm(emptyForm());
     setRates(emptyRates());
     setEditId(null);
@@ -289,6 +299,18 @@ export function ItemMasterTab() {
     });
     // Load saved rates for this article
     setRates(loadArticleRates(item.articleNo));
+    // Load saved fabric unit for this article
+    const savedUnit = localStorage.getItem(`fabricUnit_${item.articleNo}`) as
+      | "meters"
+      | "grams"
+      | null;
+    setFabricUnit(savedUnit || "meters");
+    if (actor) {
+      actor
+        .getFabricPerPiece(item.articleNo)
+        .then((v) => setFabricPerPiece(v))
+        .catch(() => {});
+    }
     setEditId(item.id);
     setShowForm(true);
   };
@@ -424,6 +446,7 @@ export function ItemMasterTab() {
 
   return (
     <div className="p-4 pb-24 space-y-4">
+      <DashboardAlerts />
       <div className="flex items-center justify-between">
         <h2
           className="text-lg font-bold"
@@ -437,6 +460,7 @@ export function ItemMasterTab() {
             setForm(emptyForm());
             setRates(emptyRates());
             setEditId(null);
+            setFabricUnit("meters");
             setShowForm(true);
             setShowColorForm(false);
           }}
@@ -483,6 +507,59 @@ export function ItemMasterTab() {
                 setForm((f) => ({ ...f, totalQuantity: e.target.value }))
               }
               placeholder="e.g. 500"
+            />
+          </div>
+
+          <div>
+            <Label>Fabric Consumption Per Piece — Optional</Label>
+            {/* Unit toggle */}
+            <div className="flex gap-2 mt-1 mb-2">
+              <button
+                type="button"
+                onClick={() => setFabricUnit("meters")}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                style={{
+                  background:
+                    fabricUnit === "meters"
+                      ? "oklch(var(--primary))"
+                      : "transparent",
+                  color:
+                    fabricUnit === "meters"
+                      ? "oklch(var(--primary-foreground))"
+                      : "oklch(var(--foreground))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                Meters
+              </button>
+              <button
+                type="button"
+                onClick={() => setFabricUnit("grams")}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                style={{
+                  background:
+                    fabricUnit === "grams"
+                      ? "oklch(var(--primary))"
+                      : "transparent",
+                  color:
+                    fabricUnit === "grams"
+                      ? "oklch(var(--primary-foreground))"
+                      : "oklch(var(--foreground))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                Grams
+              </button>
+            </div>
+            <Input
+              data-ocid="item_master.input"
+              type="number"
+              step={fabricUnit === "meters" ? "0.01" : "1"}
+              value={fabricPerPiece > 0 ? String(fabricPerPiece) : ""}
+              onChange={(e) =>
+                setFabricPerPiece(Number.parseFloat(e.target.value) || 0)
+              }
+              placeholder={fabricUnit === "meters" ? "e.g. 1.5" : "e.g. 250"}
             />
           </div>
 
@@ -896,6 +973,7 @@ export function ItemMasterTab() {
                 setForm(emptyForm());
                 setRates(emptyRates());
                 setEditId(null);
+                setFabricUnit("meters");
               }}
             >
               Cancel

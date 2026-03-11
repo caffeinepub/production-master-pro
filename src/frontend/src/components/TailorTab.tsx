@@ -162,6 +162,30 @@ export function TailorTab() {
 
     setLoading(true);
     try {
+      // Article-level master cutting quantity validation
+      const selectedItem = items.find((i) => i.articleNo === form.articleNo);
+      const masterCuttingQty = selectedItem ? selectedItem.totalQuantity : 0;
+      if (masterCuttingQty > 0) {
+        const alreadyStitchedTotal = await actor.getTailorQtyByArticle(
+          form.articleNo,
+        );
+        let effectiveTotalStitched = alreadyStitchedTotal;
+        if (editId !== null) {
+          const currentRec = records.find((r) => r.id === editId);
+          if (currentRec) {
+            effectiveTotalStitched = Math.max(
+              0,
+              alreadyStitchedTotal - currentRec.pcsGiven,
+            );
+          }
+        }
+        if (effectiveTotalStitched + pcs > masterCuttingQty) {
+          toast.error("Production cannot exceed Master Cutting Quantity.");
+          setLoading(false);
+          return;
+        }
+      }
+
       // Get already stitched qty for this color+size from backend
       const alreadyStitched = await actor.getStitchedQtyByColorSize(
         form.articleNo,

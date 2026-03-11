@@ -7,6 +7,30 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
+export interface ProductionMismatch {
+    cuttingQty: number;
+    dispatchedQty: number;
+    articleNo: string;
+    stitchedQty: number;
+}
+export interface FabricConsumptionReport {
+    fabricPerPiece: number;
+    articleNo: string;
+    totalCutting: number;
+    totalFabricUsed: number;
+}
+export interface DispatchRecord {
+    id: bigint;
+    dispatchDate: string;
+    dispatchPcs: number;
+    finalPayment: number;
+    articleNo: string;
+    sizeWiseBreakup: string;
+    salePrice: number;
+    partyName: string;
+    percentage: number;
+    colorWiseBreakup: string;
+}
 export interface OverlockRecord {
     id: bigint;
     finalAmount: number;
@@ -16,6 +40,12 @@ export interface OverlockRecord {
     size: string;
     articleNo: string;
     quantity: number;
+}
+export interface FinishedStockSummary {
+    totalProduced: number;
+    totalDispatched: number;
+    available: number;
+    articleNo: string;
 }
 export interface AdditionalWorkRecord {
     id: bigint;
@@ -51,18 +81,6 @@ export interface TailorRecord {
     size: string;
     articleNo: string;
     tailorAmount: number;
-}
-export interface DispatchRecord {
-    id: bigint;
-    dispatchDate: string;
-    dispatchPcs: number;
-    finalPayment: number;
-    articleNo: string;
-    sizeWiseBreakup: string;
-    salePrice: number;
-    partyName: string;
-    percentage: number;
-    colorWiseBreakup: string;
 }
 export interface ItemMaster {
     id: bigint;
@@ -100,8 +118,12 @@ export interface backendInterface {
     getAdditionalWorkRecords(): Promise<Array<AdditionalWorkRecord>>;
     getArticleRemainingQty(articleNo: string): Promise<number | null>;
     getArticleReport(): Promise<Array<[string, number]>>;
+    getAvailableStock(articleNo: string): Promise<number>;
     getDispatchRecords(): Promise<Array<DispatchRecord>>;
     getDispatchedQtyByArticle(articleNo: string): Promise<number>;
+    getFabricConsumptionReport(): Promise<Array<FabricConsumptionReport>>;
+    getFabricPerPiece(articleNo: string): Promise<number>;
+    getFinishedStockSummary(): Promise<Array<FinishedStockSummary>>;
     getItemMasterByArticle(articleNo: string): Promise<ItemMaster | null>;
     getItemMasters(): Promise<Array<ItemMaster>>;
     getMasterNames(): Promise<Array<string>>;
@@ -109,10 +131,13 @@ export interface backendInterface {
     getOverlockRecords(): Promise<Array<OverlockRecord>>;
     getOverlockReport(): Promise<Array<[string, number, number]>>;
     getPaymentSummary(): Promise<Array<[string, number, number]>>;
+    getProductionMismatches(): Promise<Array<ProductionMismatch>>;
     getProductionRecords(): Promise<Array<ProductionRecord>>;
     getStitchedQtyByColorSize(articleNo: string, color: string, size: string): Promise<number>;
+    getTailorQtyByArticle(articleNo: string): Promise<number>;
     getTailorRecords(): Promise<Array<TailorRecord>>;
     getTailorReport(): Promise<Array<[string, number, number]>>;
+    setFabricPerPiece(articleNo: string, fabricPerPiece: number): Promise<void>;
     updateAdditionalWorkRecord(id: bigint, date: string, articleNo: string, workType: string, employeeName: string, pcsDone: number, ratePerPcs: number, color: string, size: string): Promise<boolean>;
     updateDispatchRecord(id: bigint, articleNo: string, partyName: string, dispatchDate: string, dispatchPcs: number, salePrice: number, percentage: number, sizeWiseBreakup: string, colorWiseBreakup: string): Promise<boolean>;
     updateItemMaster(id: bigint, articleNo: string, totalQuantity: number, colors: string, hasAdditionalWork: boolean, workTypes: string, sizeXS: number, sizeS: number, sizeM: number, sizeL: number, sizeXL: number, sizeXXL: number, size3XL: number, size4XL: number, size5XL: number, colorSizeData: string): Promise<boolean>;

@@ -6,9 +6,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Factory, LogOut, Settings, UserCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  Factory,
+  Loader2,
+  LogOut,
+  Settings,
+  Trash2,
+  UserCheck,
+} from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import type { TabId } from "../App";
+import { useActor } from "../hooks/useActor";
 
 const TAB_TITLES: Record<TabId, string> = {
   history: "Production History",
@@ -18,6 +28,8 @@ const TAB_TITLES: Record<TabId, string> = {
   payment: "Payment Summary",
   tailor: "Tailor Records",
   add_work: "Additional Work",
+  finished_stock: "Finished Stock",
+  fabric_planner: "Fabric Planner",
 };
 
 interface AppHeaderProps {
@@ -27,6 +39,50 @@ interface AppHeaderProps {
 
 export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
   const [open, setOpen] = useState(false);
+  const [erasing, setErasing] = useState(false);
+  const [confirmErase, setConfirmErase] = useState(false);
+  const { actor } = useActor();
+
+  const handleEraseAll = async () => {
+    if (!actor) return;
+    setErasing(true);
+    try {
+      // Fetch and delete all records in parallel
+      const [items, tailorRecords, dispatchRecords, workRecords] =
+        await Promise.all([
+          actor.getItemMasters(),
+          actor.getTailorRecords(),
+          actor.getDispatchRecords(),
+          actor.getAdditionalWorkRecords(),
+        ]);
+
+      await Promise.all([
+        ...items.map((r) => actor.deleteItemMaster(r.id)),
+        ...tailorRecords.map((r) => actor.deleteTailorRecord(r.id)),
+        ...dispatchRecords.map((r) => actor.deleteDispatchRecord(r.id)),
+        ...workRecords.map((r) => actor.deleteAdditionalWorkRecord(r.id)),
+      ]);
+
+      // Clear localStorage keys for rates and fabric units
+      const keysToRemove = Object.keys(localStorage).filter(
+        (k) => k.startsWith("articleRates_") || k.startsWith("fabricUnit_"),
+      );
+      for (const k of keysToRemove) localStorage.removeItem(k);
+
+      toast.success("All data has been erased");
+    } catch {
+      toast.error("Failed to erase data");
+    } finally {
+      setErasing(false);
+      setConfirmErase(false);
+      setOpen(false);
+    }
+  };
+
+  const handleOpenChange = (val: boolean) => {
+    setOpen(val);
+    if (!val) setConfirmErase(false);
+  };
 
   return (
     <header
@@ -65,7 +121,7 @@ export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
         </div>
 
         {/* Settings / Profile Dialog */}
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
           <DialogTrigger asChild>
             <button
               type="button"
@@ -127,6 +183,92 @@ export function AppHeader({ activeTab, onLogout }: AppHeaderProps) {
                 <LogOut className="w-4 h-4" />
                 Logout
               </Button>
+
+              {/* Danger Zone */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-px flex-1"
+                    style={{ background: "oklch(var(--destructive) / 0.25)" }}
+                  />
+                  <span
+                    className="text-xs font-semibold uppercase tracking-wider px-1"
+                    style={{ color: "oklch(var(--destructive))" }}
+                  >
+                    Danger Zone
+                  </span>
+                  <div
+                    className="h-px flex-1"
+                    style={{ background: "oklch(var(--destructive) / 0.25)" }}
+                  />
+                </div>
+
+                {!confirmErase ? (
+                  <Button
+                    data-ocid="settings.open_modal_button"
+                    variant="outline"
+                    className="w-full gap-2"
+                    style={{
+                      borderColor: "oklch(var(--destructive) / 0.5)",
+                      color: "oklch(var(--destructive))",
+                    }}
+                    onClick={() => setConfirmErase(true)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Erase All Data
+                  </Button>
+                ) : (
+                  <div
+                    className="flex flex-col gap-3 rounded-lg p-3"
+                    style={{
+                      background: "oklch(var(--destructive) / 0.06)",
+                      border: "1px solid oklch(var(--destructive) / 0.3)",
+                    }}
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle
+                        className="w-4 h-4 mt-0.5 shrink-0"
+                        style={{ color: "oklch(var(--destructive))" }}
+                      />
+                      <p
+                        className="text-xs leading-snug"
+                        style={{ color: "oklch(var(--destructive))" }}
+                      >
+                        This will permanently delete{" "}
+                        <strong>ALL records</strong> — items, tailor entries,
+                        dispatch, work records. This cannot be undone.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        data-ocid="settings.confirm_button"
+                        variant="destructive"
+                        size="sm"
+                        className="flex-1 gap-1 text-xs"
+                        disabled={erasing}
+                        onClick={handleEraseAll}
+                      >
+                        {erasing ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3 h-3" />
+                        )}
+                        {erasing ? "Erasing..." : "Yes, Erase Everything"}
+                      </Button>
+                      <Button
+                        data-ocid="settings.cancel_button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-xs"
+                        disabled={erasing}
+                        onClick={() => setConfirmErase(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>

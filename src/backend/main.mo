@@ -6,6 +6,8 @@ import Array "mo:core/Array";
 import Iter "mo:core/Iter";
 import Order "mo:core/Order";
 
+
+
 actor {
   type ItemMaster = {
     id : Nat;
@@ -115,6 +117,27 @@ actor {
     };
   };
 
+  type FinishedStockSummary = {
+    articleNo : Text;
+    totalProduced : Float;
+    totalDispatched : Float;
+    available : Float;
+  };
+
+  type ProductionMismatch = {
+    articleNo : Text;
+    cuttingQty : Float;
+    stitchedQty : Float;
+    dispatchedQty : Float;
+  };
+
+  type FabricConsumptionReport = {
+    articleNo : Text;
+    fabricPerPiece : Float;
+    totalCutting : Float;
+    totalFabricUsed : Float;
+  };
+
   // Stable storage (survives canister upgrades)
   stable var nextId : Nat = 0;
   stable var itemMastersStable : [(Nat, ItemMaster)] = [];
@@ -123,6 +146,7 @@ actor {
   stable var additionalWorkRecordsStable : [(Nat, AdditionalWorkRecord)] = [];
   stable var productionRecordsStable : [(Nat, ProductionRecord)] = [];
   stable var overlockRecordsStable : [(Nat, OverlockRecord)] = [];
+  stable var fabricDataStable : [(Text, Float)] = [];
 
   // Working heap maps (rebuilt from stable on upgrade)
   var itemMasters = Map.empty<Nat, ItemMaster>();
@@ -131,6 +155,7 @@ actor {
   var additionalWorkRecords = Map.empty<Nat, AdditionalWorkRecord>();
   var productionRecords = Map.empty<Nat, ProductionRecord>();
   var overlockRecords = Map.empty<Nat, OverlockRecord>();
+  var fabricData = Map.empty<Text, Float>();
 
   // Restore heap maps from stable storage on startup
   do {
@@ -140,6 +165,7 @@ actor {
     for ((k, v) in additionalWorkRecordsStable.vals()) { additionalWorkRecords.add(k, v) };
     for ((k, v) in productionRecordsStable.vals()) { productionRecords.add(k, v) };
     for ((k, v) in overlockRecordsStable.vals()) { overlockRecords.add(k, v) };
+    for ((k, v) in fabricDataStable.vals()) { fabricData.add(k, v) };
   };
 
   system func preupgrade() {
@@ -149,6 +175,7 @@ actor {
     additionalWorkRecordsStable := additionalWorkRecords.entries().toArray();
     productionRecordsStable := productionRecords.entries().toArray();
     overlockRecordsStable := overlockRecords.entries().toArray();
+    fabricDataStable := fabricData.entries().toArray();
   };
 
   system func postupgrade() {
@@ -158,6 +185,31 @@ actor {
     additionalWorkRecordsStable := [];
     productionRecordsStable := [];
     overlockRecordsStable := [];
+    fabricDataStable := [];
+  };
+
+  // ===== CLEAR ALL DATA =====
+  public shared ({ caller }) func clearAllData() : async () {
+    itemMasters := Map.empty<Nat, ItemMaster>();
+    tailorRecords := Map.empty<Nat, TailorRecord>();
+    dispatchRecords := Map.empty<Nat, DispatchRecord>();
+    additionalWorkRecords := Map.empty<Nat, AdditionalWorkRecord>();
+    productionRecords := Map.empty<Nat, ProductionRecord>();
+    overlockRecords := Map.empty<Nat, OverlockRecord>();
+    fabricData := Map.empty<Text, Float>();
+    nextId := 0;
+  };
+
+  // Fabric Data functions
+  public shared ({ caller }) func setFabricPerPiece(articleNo : Text, fabricPerPiece : Float) : async () {
+    fabricData.add(articleNo, fabricPerPiece);
+  };
+
+  public query ({ caller }) func getFabricPerPiece(articleNo : Text) : async Float {
+    switch (fabricData.get(articleNo)) {
+      case (?fabricPerPiece) { fabricPerPiece };
+      case (null) { 0.0 };
+    };
   };
 
   // ItemMaster CRUD
@@ -816,7 +868,6 @@ actor {
     );
   };
 
-  // New functions for color-size qty retrieval
   public query ({ caller }) func getStitchedQtyByColorSize(articleNo : Text, color : Text, size : Text) : async Float {
     let filtered = tailorRecords.values().toArray().filter(
       func(record) {
@@ -833,5 +884,101 @@ actor {
       }
     );
     filtered.foldLeft(0.0, func(acc, record) { acc + record.pcsDone });
+  };
+
+  // New Queries for Updated Production Master
+  public query ({ caller }) func getTailorQtyByArticle(articleNo : Text) : async Float {
+    let filtered = tailorRecords.values().toArray().filter(
+      func(record) { record.articleNo == articleNo }
+    );
+
+    filtered.foldLeft(0.0, func(acc, record) { acc + record.pcsGiven });
+  };
+
+  public query ({ caller }) func getFinishedStockSummary() : async [FinishedStockSummary] {
+    let uniqueArticles = getUniqueArticles();
+
+    uniqueArticles.map(
+      func(articleNo) {
+        let totalProduced = tailorRecords.values().toArray().filter(
+          func(record) { record.articleNo == articleNo }
+        ).foldLeft(0.0, func(acc, record) { acc + record.pcsGiven });
+
+        let totalDispatched = dispatchRecords.values().toArray().filter(
+          func(record) { record.articleNo == articleNo }
+        ).foldLeft(0.0, func(acc, record) { acc + record.dispatchPcs });
+
+        {
+          articleNo;
+          totalProduced;
+          totalDispatched;
+          available = totalProduced - totalDispatched;
+        };
+      }
+    );
+  };
+
+  func getUniqueArticles() : [Text] {
+    let articleMap = Map.empty<Text, ()>();
+
+    tailorRecords.values().forEach(func(record) { articleMap.add(record.articleNo, ()) });
+    dispatchRecords.values().forEach(func(record) { articleMap.add(record.articleNo, ()) });
+
+    articleMap.keys().toArray();
+  };
+
+  public query ({ caller }) func getProductionMismatches() : async [ProductionMismatch] {
+    let itemMastersArray = itemMasters.values().toArray();
+
+    itemMastersArray.map(
+      func(item) {
+        let stitchedQty = tailorRecords.values().toArray().filter(
+          func(record) { record.articleNo == item.articleNo }
+        ).foldLeft(0.0, func(acc, record) { acc + record.pcsGiven });
+
+        let dispatchedQty = dispatchRecords.values().toArray().filter(
+          func(record) { record.articleNo == item.articleNo }
+        ).foldLeft(0.0, func(acc, record) { acc + record.dispatchPcs });
+
+        {
+          articleNo = item.articleNo;
+          cuttingQty = item.totalQuantity;
+          stitchedQty;
+          dispatchedQty;
+        };
+      }
+    );
+  };
+
+  public query ({ caller }) func getFabricConsumptionReport() : async [FabricConsumptionReport] {
+    let itemMastersArray = itemMasters.values().toArray();
+
+    itemMastersArray.map(
+      func(item) {
+        let fabricPerPiece = switch (fabricData.get(item.articleNo)) {
+          case (?fabricPerPiece) { fabricPerPiece };
+          case (null) { 0.0 };
+        };
+
+        {
+          articleNo = item.articleNo;
+          fabricPerPiece;
+          totalCutting = item.totalQuantity;
+          totalFabricUsed = fabricPerPiece * item.totalQuantity;
+        };
+      }
+    );
+  };
+
+  public query ({ caller }) func getAvailableStock(articleNo : Text) : async Float {
+    let totalProduced = tailorRecords.values().toArray().filter(
+      func(record) { record.articleNo == articleNo }
+    ).foldLeft(0.0, func(acc, record) { acc + record.pcsGiven });
+
+    let totalDispatched = dispatchRecords.values().toArray().filter(
+      func(record) { record.articleNo == articleNo }
+    ).foldLeft(0.0, func(acc, record) { acc + record.dispatchPcs });
+
+    totalProduced - totalDispatched;
   };
 };

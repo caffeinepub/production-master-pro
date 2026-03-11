@@ -40,6 +40,9 @@ export function DispatchTab() {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [filterArticle, setFilterArticle] = useState("");
+  const [availableStockInfo, setAvailableStockInfo] = useState<number | null>(
+    null,
+  );
 
   const pcs = Number.parseFloat(form.dispatchPcs) || 0;
   const price = Number.parseFloat(form.salePrice) || 0;
@@ -60,6 +63,19 @@ export function DispatchTab() {
   useEffect(() => {
     loadData();
   }, [actor]);
+
+  // Fetch available stock when article changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (form.articleNo && actor) {
+      actor
+        .getAvailableStock(form.articleNo)
+        .then((v) => setAvailableStockInfo(v))
+        .catch(() => setAvailableStockInfo(null));
+    } else {
+      setAvailableStockInfo(null);
+    }
+  }, [form.articleNo, actor]);
 
   const getItemTotalQty = (articleNo: string): number => {
     const item = items.find((i) => i.articleNo === articleNo);
@@ -90,7 +106,26 @@ export function DispatchTab() {
       return;
     }
 
+    // Validate available stock before dispatch
     setLoading(true);
+    try {
+      const availableStock = await actor.getAvailableStock(form.articleNo);
+      let effectiveStock = availableStock;
+      if (editId !== null) {
+        const currentRec = records.find((r) => r.id === editId);
+        if (currentRec) {
+          effectiveStock = availableStock + currentRec.dispatchPcs;
+        }
+      }
+      if (pcs > effectiveStock) {
+        toast.error("Dispatch quantity exceeds available stock.");
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // If stock check fails, proceed without blocking
+    }
+
     try {
       if (editId !== null) {
         await actor.updateDispatchRecord(
@@ -246,6 +281,20 @@ export function DispatchTab() {
               }
               placeholder="0"
             />
+            {availableStockInfo !== null && (
+              <p
+                className="text-xs mt-1"
+                style={{
+                  color:
+                    availableStockInfo <
+                    (Number.parseFloat(form.dispatchPcs) || 0)
+                      ? "oklch(var(--destructive))"
+                      : "oklch(var(--muted-foreground))",
+                }}
+              >
+                Available Stock: {availableStockInfo} pcs
+              </p>
+            )}
           </div>
 
           <div>

@@ -1,7 +1,9 @@
 import {
+  BarChart3,
   ClipboardList,
   IndianRupee,
   Package,
+  Ruler,
   Scissors,
   Send,
   Users,
@@ -49,6 +51,18 @@ const NAV_ITEMS: Array<{
     label: "Payment",
     icon: IndianRupee,
     ocid: "nav.payment_tab",
+  },
+  {
+    id: "finished_stock",
+    label: "Stock",
+    icon: BarChart3,
+    ocid: "nav.finished_stock_tab",
+  },
+  {
+    id: "fabric_planner",
+    label: "Fabric",
+    icon: Ruler,
+    ocid: "nav.fabric_planner_tab",
   },
   {
     id: "master_report",
