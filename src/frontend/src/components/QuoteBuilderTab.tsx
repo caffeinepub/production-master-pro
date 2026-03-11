@@ -6,12 +6,14 @@ import { Separator } from "@/components/ui/separator";
 import {
   Download,
   FileText,
+  History,
   Plus,
   Printer,
   Share2,
   Trash2,
+  Upload,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface WorkItem {
@@ -19,6 +21,17 @@ interface WorkItem {
   name: string;
   price: string;
 }
+
+interface SavedQuote {
+  id: string;
+  clientName: string;
+  articleName: string;
+  works: WorkItem[];
+  totalCMT: number;
+  createdAt: string;
+}
+
+const STORAGE_KEY = "sg9_saved_quotes";
 
 const DEFAULT_WORKS: WorkItem[] = [
   { id: "1", name: "Cutting", price: "" },
@@ -38,8 +51,30 @@ function formatDate(date: Date): string {
   });
 }
 
+function formatDateFromISO(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function formatDateForFilename(date: Date): string {
   return date.toISOString().split("T")[0].replace(/-/g, "");
+}
+
+function loadSavedQuotes(): SavedQuote[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as SavedQuote[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedQuotes(quotes: SavedQuote[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(quotes));
 }
 
 export function QuoteBuilderTab() {
@@ -47,8 +82,14 @@ export function QuoteBuilderTab() {
   const [articleName, setArticleName] = useState("");
   const [works, setWorks] = useState<WorkItem[]>(DEFAULT_WORKS);
   const [showPreview, setShowPreview] = useState(false);
+  const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
   const previewRef = useRef<HTMLDivElement>(null);
   const today = new Date();
+
+  // Load saved quotes on mount
+  useEffect(() => {
+    setSavedQuotes(loadSavedQuotes());
+  }, []);
 
   const totalCMT = works.reduce((sum, w) => {
     const val = Number.parseFloat(w.price);
@@ -84,16 +125,56 @@ export function QuoteBuilderTab() {
     return true;
   }
 
+  function saveQuoteToHistory() {
+    const newQuote: SavedQuote = {
+      id: Date.now().toString(),
+      clientName,
+      articleName,
+      works: works.map((w) => ({ ...w })),
+      totalCMT,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [newQuote, ...loadSavedQuotes()].slice(0, 50); // Keep last 50
+    persistSavedQuotes(updated);
+    setSavedQuotes(updated);
+  }
+
+  function deleteQuote(id: string) {
+    const updated = loadSavedQuotes().filter((q) => q.id !== id);
+    persistSavedQuotes(updated);
+    setSavedQuotes(updated);
+    toast.success("Quote deleted.");
+  }
+
+  function loadQuote(q: SavedQuote) {
+    setClientName(q.clientName);
+    setArticleName(q.articleName);
+    setWorks(q.works.map((w) => ({ ...w })));
+    setShowPreview(false);
+    toast.success("Quote loaded into form.");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function generatePreview() {
     if (!validateForm()) return;
+    saveQuoteToHistory();
     setShowPreview(true);
     setTimeout(() => {
       previewRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
   }
 
-  function buildPrintableHTML(): string {
-    const worksRows = works
+  function buildPrintableHTML(
+    cName?: string,
+    aName?: string,
+    wList?: WorkItem[],
+    cmt?: number,
+  ): string {
+    const cn = cName ?? clientName;
+    const an = aName ?? articleName;
+    const wl = wList ?? works;
+    const total = cmt ?? totalCMT;
+    const worksRows = wl
       .filter((w) => w.name.trim())
       .map((w) => {
         const price = Number.parseFloat(w.price);
@@ -131,8 +212,8 @@ export function QuoteBuilderTab() {
 <hr class="divider" />
 <div class="meta">
   <div><span>Date:</span> ${formatDate(today)}</div>
-  <div><span>Client Name:</span> ${clientName}</div>
-  <div><span>Article Name:</span> ${articleName}</div>
+  <div><span>Client Name:</span> ${cn}</div>
+  <div><span>Article Name:</span> ${an}</div>
 </div>
 <table>
   <thead><tr><th>Work</th><th style="text-align:right">Rate (₹)</th></tr></thead>
@@ -140,7 +221,7 @@ export function QuoteBuilderTab() {
     ${worksRows}
     <tr class="total-row">
       <td>Total CMT per piece</td>
-      <td style="text-align:right">₹${totalCMT.toFixed(2)}</td>
+      <td style="text-align:right">₹${total.toFixed(2)}</td>
     </tr>
   </tbody>
 </table>
@@ -149,12 +230,21 @@ export function QuoteBuilderTab() {
 </html>`;
   }
 
-  function downloadPDF() {
-    if (!validateForm()) return;
-    const html = buildPrintableHTML();
+  function downloadPDF(
+    cName?: string,
+    aName?: string,
+    wList?: WorkItem[],
+    cmt?: number,
+  ) {
+    const cn = cName ?? clientName;
+    const an = aName ?? articleName;
+    if (!cn || !an) {
+      if (!validateForm()) return;
+    }
+    const html = buildPrintableHTML(cn, an, wList, cmt);
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
-    const filename = `Shiva_Garment_Quotation_${clientName.replace(/\s+/g, "_")}_${formatDateForFilename(today)}.html`;
+    const filename = `Shiva_Garment_Quotation_${cn.replace(/\s+/g, "_")}_${formatDateForFilename(today)}.html`;
 
     const a = document.createElement("a");
     a.href = url;
@@ -167,16 +257,27 @@ export function QuoteBuilderTab() {
     );
   }
 
-  function shareWhatsApp() {
-    if (!validateForm()) return;
+  function shareWhatsApp(
+    cName?: string,
+    aName?: string,
+    wList?: WorkItem[],
+    cmt?: number,
+  ) {
+    const cn = cName ?? clientName;
+    const an = aName ?? articleName;
+    const wl = wList ?? works;
+    const total = cmt ?? totalCMT;
+    if (!cn || !an) {
+      if (!validateForm()) return;
+    }
 
-    const validWorks = works.filter((w) => w.name.trim());
+    const validWorks = wl.filter((w) => w.name.trim());
     const lines = validWorks.map((w) => {
       const price = Number.parseFloat(w.price);
       return `${w.name}: ₹${Number.isNaN(price) ? "0" : price}`;
     });
 
-    const text = `*SHIVA GARMENT – QUOTATION*\nDate: ${formatDate(today)}\nClient: ${clientName}\nArticle: ${articleName}\n\n*Work Breakdown:*\n${lines.join("\n")}\n\n*Total CMT per piece: ₹${totalCMT.toFixed(2)}*`;
+    const text = `*SHIVA GARMENT – QUOTATION*\nDate: ${formatDate(today)}\nClient: ${cn}\nArticle: ${an}\n\n*Work Breakdown:*\n${lines.join("\n")}\n\n*Total CMT per piece: ₹${total.toFixed(2)}*`;
 
     const encoded = encodeURIComponent(text);
     window.open(`https://wa.me/?text=${encoded}`, "_blank");
@@ -379,7 +480,7 @@ export function QuoteBuilderTab() {
             type="button"
             variant="outline"
             data-ocid="quote.download.button"
-            onClick={downloadPDF}
+            onClick={() => downloadPDF()}
             className="gap-2 h-11 font-semibold"
           >
             <Download className="w-4 h-4" />
@@ -388,7 +489,7 @@ export function QuoteBuilderTab() {
           <Button
             type="button"
             data-ocid="quote.whatsapp.button"
-            onClick={shareWhatsApp}
+            onClick={() => shareWhatsApp()}
             className="gap-2 h-11 font-semibold"
             style={{ background: "#25D366", color: "#fff" }}
           >
@@ -534,6 +635,152 @@ export function QuoteBuilderTab() {
                 </tbody>
               </table>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Saved Quotes History */}
+      {savedQuotes.length > 0 && (
+        <Card data-ocid="quote.history.card">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <div className="flex items-center gap-2">
+              <History
+                className="w-4 h-4"
+                style={{ color: "oklch(var(--primary))" }}
+              />
+              <h3
+                className="font-bold text-base"
+                style={{ color: "oklch(var(--foreground))" }}
+              >
+                Saved Quotes
+              </h3>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-semibold ml-1"
+                style={{
+                  background: "oklch(var(--primary) / 0.12)",
+                  color: "oklch(var(--primary))",
+                }}
+              >
+                {savedQuotes.length}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            {savedQuotes.map((q, idx) => (
+              <div
+                key={q.id}
+                data-ocid={`quote.history.item.${idx + 1}`}
+                className="rounded-xl border p-3 space-y-2"
+                style={{
+                  borderColor: "oklch(var(--border))",
+                  background: "oklch(var(--muted) / 0.3)",
+                }}
+              >
+                {/* Quote card header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div
+                      className="font-semibold text-sm truncate"
+                      style={{ color: "oklch(var(--foreground))" }}
+                    >
+                      {q.clientName} — {q.articleName}
+                    </div>
+                    <div
+                      className="text-xs mt-0.5"
+                      style={{ color: "oklch(var(--muted-foreground))" }}
+                    >
+                      {formatDateFromISO(q.createdAt)}
+                    </div>
+                  </div>
+                  <div
+                    className="text-sm font-black shrink-0"
+                    style={{ color: "oklch(var(--primary))" }}
+                  >
+                    ₹{q.totalCMT.toFixed(2)}
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    data-ocid={`quote.history.load.button.${idx + 1}`}
+                    onClick={() => loadQuote(q)}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors"
+                    style={{
+                      background: "oklch(var(--primary) / 0.1)",
+                      color: "oklch(var(--primary))",
+                      borderColor: "oklch(var(--primary) / 0.3)",
+                    }}
+                  >
+                    <Upload className="w-3 h-3" />
+                    Load
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid={`quote.history.download.button.${idx + 1}`}
+                    onClick={() =>
+                      downloadPDF(
+                        q.clientName,
+                        q.articleName,
+                        q.works,
+                        q.totalCMT,
+                      )
+                    }
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors"
+                    style={{
+                      background: "oklch(var(--muted))",
+                      color: "oklch(var(--foreground))",
+                      borderColor: "oklch(var(--border))",
+                    }}
+                  >
+                    <Download className="w-3 h-3" />
+                    Download PDF
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid={`quote.history.whatsapp.button.${idx + 1}`}
+                    onClick={() =>
+                      shareWhatsApp(
+                        q.clientName,
+                        q.articleName,
+                        q.works,
+                        q.totalCMT,
+                      )
+                    }
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors"
+                    style={{
+                      background: "#25D366",
+                      color: "#fff",
+                      borderColor: "#25D366",
+                    }}
+                  >
+                    <Share2 className="w-3 h-3" />
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid={`quote.history.delete_button.${idx + 1}`}
+                    onClick={() => {
+                      if (
+                        window.confirm(`Delete quote for "${q.clientName}"?`)
+                      ) {
+                        deleteQuote(q.id);
+                      }
+                    }}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors ml-auto"
+                    style={{
+                      background: "oklch(var(--destructive) / 0.08)",
+                      color: "oklch(var(--destructive))",
+                      borderColor: "oklch(var(--destructive) / 0.3)",
+                    }}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

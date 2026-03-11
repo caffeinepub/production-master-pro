@@ -19,7 +19,9 @@ import { useActor } from "../hooks/useActor";
 
 function getFabricUnit(articleNo: string): string {
   const saved = localStorage.getItem(`fabricUnit_${articleNo}`);
-  return saved === "grams" ? "g" : "m";
+  if (saved === "grams") return "g";
+  if (saved === "kg") return "KG";
+  return "m";
 }
 
 export function FabricPlannerTab() {
@@ -32,7 +34,7 @@ export function FabricPlannerTab() {
   // Form to set fabric per piece
   const [planArticle, setPlanArticle] = useState("");
   const [planFabric, setPlanFabric] = useState("");
-  const [planUnit, setPlanUnit] = useState<"meters" | "grams">("meters");
+  const [planUnit, setPlanUnit] = useState<"meters" | "grams" | "kg">("meters");
 
   const loadData = async () => {
     if (!actor) return;
@@ -71,6 +73,7 @@ export function FabricPlannerTab() {
       const savedUnit = localStorage.getItem(`fabricUnit_${planArticle}`) as
         | "meters"
         | "grams"
+        | "kg"
         | null;
       setPlanUnit(savedUnit || "meters");
     } else {
@@ -260,14 +263,36 @@ export function FabricPlannerTab() {
               >
                 Grams
               </button>
+              <button
+                type="button"
+                onClick={() => setPlanUnit("kg")}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                style={{
+                  background:
+                    planUnit === "kg" ? "oklch(var(--primary))" : "transparent",
+                  color:
+                    planUnit === "kg"
+                      ? "oklch(var(--primary-foreground))"
+                      : "oklch(var(--foreground))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                KG
+              </button>
             </div>
             <Input
               data-ocid="fabric_planner.input"
               type="number"
-              step={planUnit === "meters" ? "0.01" : "1"}
+              step={planUnit === "meters" || planUnit === "kg" ? "0.01" : "1"}
               value={planFabric}
               onChange={(e) => setPlanFabric(e.target.value)}
-              placeholder={planUnit === "meters" ? "e.g. 1.5" : "e.g. 250"}
+              placeholder={
+                planUnit === "meters"
+                  ? "e.g. 1.5"
+                  : planUnit === "kg"
+                    ? "e.g. 1.25"
+                    : "e.g. 250"
+              }
             />
           </div>
           <Button

@@ -1,28 +1,21 @@
 # Production Master Pro
 
 ## Current State
-The app uses a username/password login (default A/a) stored in localStorage. The AppHeader has a settings dialog to change credentials. All data is stored globally in Motoko stable storage (not per-user). `@dfinity/auth-client` ~3.3.0 is already in package.json.
+The app has a Quote Builder tab with client name, article name, custom work fields, PDF download, and WhatsApp text sharing. Fabric consumption in Item Master supports meters or grams unit selection.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Internet Identity login screen replacing the username/password screen
-- `useAuth` hook managing AuthClient state (login, logout, identity, principal)
-- Profile indicator in AppHeader top-right showing the user is logged in (icon + short principal text or "II User")
-- Logout button in the settings dialog in AppHeader
+- **Quote History / Saved Quotes section** in the Quote Builder tab: every time a quote is generated, save it to localStorage. Show a "Saved Quotes" section below the form where users can view, re-open (load into form), download PDF, share on WhatsApp, or delete old quotes.
+- **Fabric Consumption in KG**: add "KG" as a unit option alongside meters and grams in Item Master and Fabric Planner. Allow decimal values (e.g. 1.25 KG).
 
 ### Modify
-- `LoginScreen.tsx`: Replace username/password form with a single "Login with Internet Identity" button using `@dfinity/auth-client`. On click, call `authClient.login()` with identityProvider. On success call `onLogin()`.
-- `App.tsx`: Integrate AuthClient. On mount, check `authClient.isAuthenticated()`. Pass logout handler down to AppHeader.
-- `AppHeader.tsx`: Accept `onLogout` prop. Show user icon + "II User" label in top-right. In settings dialog, replace credentials content with a Logout button.
+- **WhatsApp sharing**: keep text-based WhatsApp sharing (PDF file attachment is not possible in browser web share API without native support). Improve the shared text format to include full quote breakdown clearly.
+- **Quote data structure**: each saved quote stores client name, article name, work items, total CMT, and date/time of creation.
 
 ### Remove
-- Username/password fields and credential-change logic from LoginScreen and AppHeader
-- localStorage credential storage
+- Nothing removed.
 
 ## Implementation Plan
-1. Create `src/frontend/src/hooks/useAuth.ts` - wraps AuthClient, exposes `{ isAuthenticated, principal, login, logout, loading }`
-2. Update `LoginScreen.tsx` - replace form with II login button
-3. Update `AppHeader.tsx` - add `onLogout` prop, show user indicator, add logout in settings
-4. Update `App.tsx` - use useAuth hook, pass handlers, keep splash screen flow
-5. Validate and fix any TypeScript errors
+1. In `QuoteBuilderTab.tsx`: on "Generate Quotation", auto-save quote to localStorage (`sg9_saved_quotes`). Add a collapsible "Saved Quotes" section showing saved quotes as cards with View/Download/Share/Delete actions. Add a `loadQuote(quote)` function to restore a quote into the form.
+2. In `ItemMasterTab.tsx` and `FabricPlannerTab.tsx`: add "KG" as third option in the fabric unit selector. Ensure decimal values are supported and stored correctly.

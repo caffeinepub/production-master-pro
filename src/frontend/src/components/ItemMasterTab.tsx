@@ -114,7 +114,9 @@ export function ItemMasterTab() {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [fabricPerPiece, setFabricPerPiece] = useState(0);
-  const [fabricUnit, setFabricUnit] = useState<"meters" | "grams">("meters");
+  const [fabricUnit, setFabricUnit] = useState<"meters" | "grams" | "kg">(
+    "meters",
+  );
 
   // Color add form state
   const [showColorForm, setShowColorForm] = useState(false);
@@ -303,6 +305,7 @@ export function ItemMasterTab() {
     const savedUnit = localStorage.getItem(`fabricUnit_${item.articleNo}`) as
       | "meters"
       | "grams"
+      | "kg"
       | null;
     setFabricUnit(savedUnit || "meters");
     if (actor) {
@@ -550,16 +553,42 @@ export function ItemMasterTab() {
               >
                 Grams
               </button>
+              <button
+                type="button"
+                onClick={() => setFabricUnit("kg")}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                style={{
+                  background:
+                    fabricUnit === "kg"
+                      ? "oklch(var(--primary))"
+                      : "transparent",
+                  color:
+                    fabricUnit === "kg"
+                      ? "oklch(var(--primary-foreground))"
+                      : "oklch(var(--foreground))",
+                  borderColor: "oklch(var(--border))",
+                }}
+              >
+                KG
+              </button>
             </div>
             <Input
               data-ocid="item_master.input"
               type="number"
-              step={fabricUnit === "meters" ? "0.01" : "1"}
+              step={
+                fabricUnit === "meters" || fabricUnit === "kg" ? "0.01" : "1"
+              }
               value={fabricPerPiece > 0 ? String(fabricPerPiece) : ""}
               onChange={(e) =>
                 setFabricPerPiece(Number.parseFloat(e.target.value) || 0)
               }
-              placeholder={fabricUnit === "meters" ? "e.g. 1.5" : "e.g. 250"}
+              placeholder={
+                fabricUnit === "meters"
+                  ? "e.g. 1.5"
+                  : fabricUnit === "kg"
+                    ? "e.g. 1.25"
+                    : "e.g. 250"
+              }
             />
           </div>
 
