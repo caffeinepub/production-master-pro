@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { useState } from "react";
 import { AdditionalWorkTab } from "./components/AdditionalWorkTab";
 import { AppHeader } from "./components/AppHeader";
+import { BackupRestoreTab } from "./components/BackupRestoreTab";
 import { BottomNav } from "./components/BottomNav";
 import { DispatchTab } from "./components/DispatchTab";
 import { FabricPlannerTab } from "./components/FabricPlannerTab";
@@ -26,7 +27,8 @@ export type TabId =
   | "dispatch"
   | "finished_stock"
   | "fabric_planner"
-  | "quote_builder";
+  | "quote_builder"
+  | "backup_restore";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const HOST = typeof window !== "undefined" ? window.location.hostname : "";
@@ -91,6 +93,7 @@ export default function App() {
         {activeTab === "finished_stock" && <FinishedStockTab />}
         {activeTab === "fabric_planner" && <FabricPlannerTab />}
         {activeTab === "quote_builder" && <QuoteBuilderTab />}
+        {activeTab === "backup_restore" && <BackupRestoreTab />}
 
         <footer className="px-4 py-4 text-center">
           <a

@@ -1,4 +1,5 @@
 import {
+  Archive,
   BarChart3,
   ClipboardList,
   FileText,
@@ -82,6 +83,12 @@ const NAV_ITEMS: Array<{
     label: "History",
     icon: ClipboardList,
     ocid: "nav.history_tab",
+  },
+  {
+    id: "backup_restore",
+    label: "Backup",
+    icon: Archive,
+    ocid: "nav.backup_restore_tab",
   },
 ];
 

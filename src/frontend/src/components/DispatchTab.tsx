@@ -66,7 +66,7 @@ export function DispatchTab() {
   }, [actor]);
 
   // Fetch available stock when article changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+
   useEffect(() => {
     if (form.articleNo && actor) {
       actor

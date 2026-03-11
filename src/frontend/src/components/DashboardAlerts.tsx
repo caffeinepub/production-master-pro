@@ -16,7 +16,6 @@ export function DashboardAlerts() {
   const [mismatches, setMismatches] = useState<ProductionMismatch[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: load on actor ready
   useEffect(() => {
     if (!actor) return;
     Promise.all([

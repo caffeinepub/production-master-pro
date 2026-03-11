@@ -31,6 +31,7 @@ const TAB_TITLES: Record<TabId, string> = {
   finished_stock: "Finished Stock",
   fabric_planner: "Fabric Planner",
   quote_builder: "Quote Builder",
+  backup_restore: "Backup & Restore",
 };
 
 interface AppHeaderProps {
