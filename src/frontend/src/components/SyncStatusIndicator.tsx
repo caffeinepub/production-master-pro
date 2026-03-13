@@ -1,8 +1,38 @@
-import { Loader2, WifiOff } from "lucide-react";
+import { AlertTriangle, Loader2, WifiOff } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useSyncStatus } from "../hooks/useSyncStatus";
 
 export function SyncStatusIndicator() {
   const { isOnline, isSyncing, pendingCount } = useSyncStatus();
+  const [isServerBusy, setIsServerBusy] = useState(false);
+
+  useEffect(() => {
+    const handleServerBusy = () => setIsServerBusy(true);
+    const handleServerOnline = () => setIsServerBusy(false);
+    window.addEventListener("serverBusy", handleServerBusy);
+    window.addEventListener("serverOnline", handleServerOnline);
+    return () => {
+      window.removeEventListener("serverBusy", handleServerBusy);
+      window.removeEventListener("serverOnline", handleServerOnline);
+    };
+  }, []);
+
+  if (isServerBusy && isOnline) {
+    return (
+      <div
+        data-ocid="sync.error_state"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+        style={{
+          background: "oklch(0.85 0.12 85 / 0.25)",
+          color: "oklch(0.75 0.13 85)",
+          border: "1px solid oklch(0.75 0.13 85 / 0.4)",
+        }}
+      >
+        <AlertTriangle className="w-3 h-3" />
+        <span>Server Busy · Offline Queue</span>
+      </div>
+    );
+  }
 
   if (isSyncing) {
     return (

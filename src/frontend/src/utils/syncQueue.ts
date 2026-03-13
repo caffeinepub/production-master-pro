@@ -144,11 +144,16 @@ async function flushQueue(backend: BackendFunctions): Promise<number> {
   if (synced > 0) {
     removeSynced();
     setLastSyncTime();
+    window.dispatchEvent(
+      new CustomEvent("syncCompleted", { detail: { count: synced } }),
+    );
+    window.dispatchEvent(new CustomEvent("serverOnline"));
   }
   return synced;
 }
 
 let _flushHandler: (() => void) | null = null;
+let _periodicInterval: ReturnType<typeof setInterval> | null = null;
 
 export const syncEngine = {
   start(backend: BackendFunctions): void {
@@ -160,6 +165,13 @@ export const syncEngine = {
       flushQueue(backend).catch(() => {});
     };
     window.addEventListener("online", _flushHandler);
+
+    // Periodic auto-check every 30 seconds
+    _periodicInterval = setInterval(() => {
+      if (navigator.onLine && hasPending()) {
+        flushQueue(backend).catch(() => {});
+      }
+    }, 30000);
   },
 
   async flush(backend: BackendFunctions): Promise<number> {
@@ -170,6 +182,10 @@ export const syncEngine = {
     if (_flushHandler) {
       window.removeEventListener("online", _flushHandler);
       _flushHandler = null;
+    }
+    if (_periodicInterval) {
+      clearInterval(_periodicInterval);
+      _periodicInterval = null;
     }
   },
 };

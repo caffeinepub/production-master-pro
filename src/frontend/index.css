@@ -201,3 +201,32 @@
     color: oklch(var(--muted-foreground));
   }
 }
+
+/* ── Print CSS: only show #print-area when printing ─────────────────────── */
+@media print {
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: auto;
+    overflow: visible;
+  }
+  body > * {
+    display: none !important;
+  }
+  #print-area {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    z-index: auto !important;
+    background: #fff !important;
+  }
+  #print-area * {
+    visibility: visible !important;
+  }
+  @page {
+    margin: 10mm;
+  }
+}

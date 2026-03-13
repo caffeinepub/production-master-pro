@@ -1017,7 +1017,7 @@ export function BackupRestoreTab() {
         </CardContent>
       </Card>
 
-      {/* Sync Now Card */}
+      {/* Sync Data Card */}
       <Card
         style={{
           background: "oklch(var(--card))",
@@ -1042,7 +1042,7 @@ export function BackupRestoreTab() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              data-ocid="backup.sync_now.button"
+              data-ocid="backup.sync_data.button"
               disabled={isSyncing || pendingCount === 0}
               onClick={handleSyncNow}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1056,7 +1056,7 @@ export function BackupRestoreTab() {
               ) : (
                 <RefreshCw className="w-4 h-4" />
               )}
-              {isSyncing ? "Syncing..." : "Sync Now"}
+              {isSyncing ? "Syncing..." : "Sync Data"}
             </button>
             <button
               type="button"
@@ -1072,7 +1072,7 @@ export function BackupRestoreTab() {
           </div>
           {syncMessage && (
             <p
-              data-ocid="backup.sync_now.success_state"
+              data-ocid="backup.sync_data.success_state"
               className="text-xs"
               style={{
                 color: isSyncing

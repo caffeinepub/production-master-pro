@@ -88,7 +88,10 @@ export async function withRetry<T>(
       }
 
       const result = await fn();
-      if (attempt > 0) toast.dismiss("retry-toast");
+      if (attempt > 0) {
+        toast.dismiss("retry-toast");
+        window.dispatchEvent(new CustomEvent("serverOnline"));
+      }
       return result;
     } catch (err) {
       if (!isTransientError(err)) {
@@ -97,6 +100,7 @@ export async function withRetry<T>(
       }
       if (attempt === maxRetries - 1) {
         toast.dismiss("retry-toast");
+        window.dispatchEvent(new CustomEvent("serverBusy"));
         throw new Error(
           "Server is currently overloaded. Please wait a moment and try again.",
         );

@@ -4,17 +4,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
+  Camera,
   Download,
   FileText,
   History,
+  ImageIcon,
   Plus,
   Printer,
   Share2,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { downloadPdf, sharePdfWhatsApp } from "../utils/pdfUtils";
 
 interface WorkItem {
   id: string;
@@ -28,6 +32,7 @@ interface SavedQuote {
   articleName: string;
   works: WorkItem[];
   totalCMT: number;
+  garmentImage?: string;
   createdAt: string;
 }
 
@@ -64,6 +69,31 @@ function formatDateForFilename(date: Date): string {
   return date.toISOString().split("T")[0].replace(/-/g, "");
 }
 
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const MAX = 800;
+      let { width, height } = img;
+      if (width > height && width > MAX) {
+        height = (height * MAX) / width;
+        width = MAX;
+      } else if (height > MAX) {
+        width = (width * MAX) / height;
+        height = MAX;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.7));
+    };
+    img.src = url;
+  });
+}
+
 function loadSavedQuotes(): SavedQuote[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -81,15 +111,54 @@ export function QuoteBuilderTab() {
   const [clientName, setClientName] = useState("");
   const [articleName, setArticleName] = useState("");
   const [works, setWorks] = useState<WorkItem[]>(DEFAULT_WORKS);
+  const [garmentImage, setGarmentImage] = useState<string>("");
   const [showPreview, setShowPreview] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<SavedQuote[]>([]);
+  // For PDF generation — hidden off-screen print area
+  const [printPayload, setPrintPayload] = useState<{
+    cName: string;
+    aName: string;
+    wList: WorkItem[];
+    cmt: number;
+    img: string;
+    action: "print" | "download" | "share";
+  } | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
   const today = new Date();
 
-  // Load saved quotes on mount
   useEffect(() => {
     setSavedQuotes(loadSavedQuotes());
   }, []);
+
+  // Trigger PDF action after printPayload renders off-screen
+  useEffect(() => {
+    if (!printPayload) return;
+    const timeout = setTimeout(async () => {
+      const cn = printPayload.cName;
+      const an = printPayload.aName;
+      const filename = `Shiva_Garment_Quotation_${cn.replace(/\s+/g, "_")}_${formatDateForFilename(today)}.pdf`;
+      try {
+        if (printPayload.action === "print") {
+          window.print();
+        } else if (printPayload.action === "download") {
+          await downloadPdf("quote-print-area", filename);
+          toast.success("Quotation PDF downloaded!");
+        } else if (printPayload.action === "share") {
+          const text = `SHIVA GARMENT - QUOTATION\nClient: ${cn}\nArticle: ${an}\nTotal CMT: \u20b9${printPayload.cmt.toFixed(2)}/pc`;
+          await sharePdfWhatsApp("quote-print-area", filename, text);
+        }
+      } catch (err) {
+        toast.error(
+          `Export failed: ${
+            err instanceof Error ? err.message : "Unknown error"
+          }`,
+        );
+      } finally {
+        setPrintPayload(null);
+      }
+    }, 600);
+    return () => clearTimeout(timeout);
+  }, [printPayload, today]);
 
   const totalCMT = works.reduce((sum, w) => {
     const val = Number.parseFloat(w.price);
@@ -132,9 +201,10 @@ export function QuoteBuilderTab() {
       articleName,
       works: works.map((w) => ({ ...w })),
       totalCMT,
+      garmentImage,
       createdAt: new Date().toISOString(),
     };
-    const updated = [newQuote, ...loadSavedQuotes()].slice(0, 50); // Keep last 50
+    const updated = [newQuote, ...loadSavedQuotes()].slice(0, 50);
     persistSavedQuotes(updated);
     setSavedQuotes(updated);
   }
@@ -150,6 +220,7 @@ export function QuoteBuilderTab() {
     setClientName(q.clientName);
     setArticleName(q.articleName);
     setWorks(q.works.map((w) => ({ ...w })));
+    setGarmentImage(q.garmentImage || "");
     setShowPreview(false);
     toast.success("Quote loaded into form.");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -164,24 +235,91 @@ export function QuoteBuilderTab() {
     }, 100);
   }
 
-  function buildPrintableHTML(
+  const handleGarmentImageChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    toast.loading("Processing image...");
+    const compressed = await compressImage(file);
+    setGarmentImage(compressed);
+    toast.dismiss();
+    toast.success("Garment image added");
+    e.target.value = "";
+  };
+
+  // Trigger print using off-screen div
+  function triggerPrint(
+    action: "print" | "download" | "share",
     cName?: string,
     aName?: string,
     wList?: WorkItem[],
     cmt?: number,
-  ): string {
+    img?: string,
+  ) {
+    const cn = cName ?? clientName;
+    const an = aName ?? articleName;
+    if (!cn.trim() || !an.trim()) {
+      if (!validateForm()) return;
+    }
+    const toastId = action === "print" ? undefined : "pdf-action";
+    if (toastId) toast.loading("Generating PDF...", { id: toastId });
+    setPrintPayload({
+      cName: cn,
+      aName: an,
+      wList: wList ?? works,
+      cmt: cmt ?? totalCMT,
+      img: img ?? garmentImage,
+      action,
+    });
+    if (toastId) setTimeout(() => toast.dismiss(toastId), 5000);
+  }
+
+  // Legacy: print via new window (fallback)
+  function openPrintWindow(
+    cName?: string,
+    aName?: string,
+    wList?: WorkItem[],
+    cmt?: number,
+    img?: string,
+  ) {
     const cn = cName ?? clientName;
     const an = aName ?? articleName;
     const wl = wList ?? works;
     const total = cmt ?? totalCMT;
-    const worksRows = wl
+    const image = img ?? garmentImage;
+    const html = buildPrintableHTML(cn, an, wl, total, image);
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 300);
+    }
+  }
+
+  function buildPrintableHTML(
+    cName: string,
+    aName: string,
+    wList: WorkItem[],
+    total: number,
+    image?: string,
+  ): string {
+    const worksRows = wList
       .filter((w) => w.name.trim())
       .map((w) => {
         const price = Number.parseFloat(w.price);
-        const display = Number.isNaN(price) ? "-" : `₹${price}`;
+        const display = Number.isNaN(price) ? "-" : `&#8377;${price}`;
         return `<tr><td>${w.name}</td><td style="text-align:right">${display}</td></tr>`;
       })
       .join("");
+
+    const imgHtml = image
+      ? `<div style="text-align:center;margin:20px 0">
+           <img src="${image}" alt="Garment" style="max-width:400px;max-height:300px;object-fit:contain;border-radius:6px;border:1px solid #ddd" />
+           <p style="font-size:11px;color:#888;margin-top:6px">Garment Reference Photo</p>
+         </div>`
+      : "";
 
     return `
 <!DOCTYPE html>
@@ -210,18 +348,19 @@ export function QuoteBuilderTab() {
   <h2>QUOTATION</h2>
 </div>
 <hr class="divider" />
+${imgHtml}
 <div class="meta">
   <div><span>Date:</span> ${formatDate(today)}</div>
-  <div><span>Client Name:</span> ${cn}</div>
-  <div><span>Article Name:</span> ${an}</div>
+  <div><span>Client Name:</span> ${cName}</div>
+  <div><span>Article Name:</span> ${aName}</div>
 </div>
 <table>
-  <thead><tr><th>Work</th><th style="text-align:right">Rate (₹)</th></tr></thead>
+  <thead><tr><th>Work</th><th style="text-align:right">Rate (&#8377;)</th></tr></thead>
   <tbody>
     ${worksRows}
     <tr class="total-row">
       <td>Total CMT per piece</td>
-      <td style="text-align:right">₹${total.toFixed(2)}</td>
+      <td style="text-align:right">&#8377;${total.toFixed(2)}</td>
     </tr>
   </tbody>
 </table>
@@ -230,63 +369,36 @@ export function QuoteBuilderTab() {
 </html>`;
   }
 
-  function downloadPDF(
-    cName?: string,
-    aName?: string,
-    wList?: WorkItem[],
-    cmt?: number,
-  ) {
-    const cn = cName ?? clientName;
-    const an = aName ?? articleName;
-    if (!cn || !an) {
-      if (!validateForm()) return;
-    }
-    const html = buildPrintableHTML(cn, an, wList, cmt);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const filename = `Shiva_Garment_Quotation_${cn.replace(/\s+/g, "_")}_${formatDateForFilename(today)}.html`;
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    toast.success(
-      "Quotation downloaded. Open the file and use Print → Save as PDF.",
-    );
-  }
-
-  function shareWhatsApp(
-    cName?: string,
-    aName?: string,
-    wList?: WorkItem[],
-    cmt?: number,
-  ) {
-    const cn = cName ?? clientName;
-    const an = aName ?? articleName;
-    const wl = wList ?? works;
-    const total = cmt ?? totalCMT;
-    if (!cn || !an) {
-      if (!validateForm()) return;
-    }
-
-    const validWorks = wl.filter((w) => w.name.trim());
-    const lines = validWorks.map((w) => {
-      const price = Number.parseFloat(w.price);
-      return `${w.name}: ₹${Number.isNaN(price) ? "0" : price}`;
-    });
-
-    const text = `*SHIVA GARMENT – QUOTATION*\nDate: ${formatDate(today)}\nClient: ${cn}\nArticle: ${an}\n\n*Work Breakdown:*\n${lines.join("\n")}\n\n*Total CMT per piece: ₹${total.toFixed(2)}*`;
-
-    const encoded = encodeURIComponent(text);
-    window.open(`https://wa.me/?text=${encoded}`, "_blank");
-  }
-
   const validWorks = works.filter((w) => w.name.trim());
 
   return (
     <div className="p-4 space-y-5 max-w-2xl mx-auto pb-24">
+      {/* Off-screen print area for PDF generation */}
+      {printPayload && (
+        <div
+          id="print-area"
+          style={{
+            position: "fixed",
+            left: "-9999px",
+            top: 0,
+            width: "800px",
+            backgroundColor: "#ffffff",
+            zIndex: -1,
+          }}
+        >
+          <div id="quote-print-area">
+            <QuotePrintTemplate
+              clientName={printPayload.cName}
+              articleName={printPayload.aName}
+              works={printPayload.wList}
+              totalCMT={printPayload.cmt}
+              garmentImage={printPayload.img}
+              date={formatDate(today)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div
         className="text-center rounded-xl py-5 px-4"
@@ -347,6 +459,102 @@ export function QuoteBuilderTab() {
         </CardContent>
       </Card>
 
+      {/* Garment Image Upload */}
+      <Card data-ocid="quote.garment_image.card">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <h3
+            className="font-bold text-base"
+            style={{ color: "oklch(var(--foreground))" }}
+          >
+            Garment Image{" "}
+            <span
+              className="text-sm font-normal"
+              style={{ color: "oklch(var(--muted-foreground))" }}
+            >
+              (Optional)
+            </span>
+          </h3>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          {garmentImage ? (
+            <div className="relative">
+              <img
+                src={garmentImage}
+                alt="Garment"
+                style={{
+                  maxHeight: "200px",
+                  objectFit: "contain",
+                  width: "100%",
+                  borderRadius: "8px",
+                  border: "1px solid oklch(var(--border))",
+                }}
+              />
+              <button
+                type="button"
+                data-ocid="quote.garment_image.delete_button"
+                onClick={() => setGarmentImage("")}
+                className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center shadow"
+                style={{
+                  background: "oklch(var(--destructive))",
+                  color: "white",
+                }}
+                aria-label="Remove garment image"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <label
+                data-ocid="quote.garment_image.upload_button"
+                className="flex-1 flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed cursor-pointer transition-colors hover:border-primary"
+                style={{ borderColor: "oklch(var(--border))" }}
+              >
+                <ImageIcon
+                  className="w-6 h-6"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                />
+                <span
+                  className="text-xs font-medium"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  Upload Garment Image
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleGarmentImageChange}
+                />
+              </label>
+              <label
+                data-ocid="quote.garment_camera.upload_button"
+                className="flex-1 flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed cursor-pointer transition-colors hover:border-primary"
+                style={{ borderColor: "oklch(var(--border))" }}
+              >
+                <Camera
+                  className="w-6 h-6"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                />
+                <span
+                  className="text-xs font-medium"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  Camera Capture
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleGarmentImageChange}
+                />
+              </label>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Work Cost Fields */}
       <Card data-ocid="quote.works.card">
         <CardHeader className="pb-2 pt-4 px-4">
@@ -364,7 +572,6 @@ export function QuoteBuilderTab() {
           </p>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-2">
-          {/* Column headers */}
           <div className="grid grid-cols-[1fr_120px_36px] gap-2 px-1">
             <span
               className="text-xs font-semibold"
@@ -376,7 +583,7 @@ export function QuoteBuilderTab() {
               className="text-xs font-semibold text-right"
               style={{ color: "oklch(var(--muted-foreground))" }}
             >
-              RATE (₹/pc)
+              RATE (&#8377;/pc)
             </span>
             <span />
           </div>
@@ -434,7 +641,6 @@ export function QuoteBuilderTab() {
 
           <Separator className="my-3" />
 
-          {/* Total CMT */}
           <div
             className="flex items-center justify-between rounded-xl px-4 py-3"
             style={{
@@ -453,7 +659,7 @@ export function QuoteBuilderTab() {
               style={{ color: "oklch(var(--primary))" }}
               data-ocid="quote.total_cmt.panel"
             >
-              ₹{totalCMT.toFixed(2)}
+              &#8377;{totalCMT.toFixed(2)}
             </span>
           </div>
         </CardContent>
@@ -475,26 +681,36 @@ export function QuoteBuilderTab() {
           Generate Quotation
         </Button>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            data-ocid="quote.print.button"
+            onClick={() => openPrintWindow()}
+            className="gap-1.5 h-11 font-semibold text-sm"
+          >
+            <Printer className="w-4 h-4" />
+            Print
+          </Button>
           <Button
             type="button"
             variant="outline"
             data-ocid="quote.download.button"
-            onClick={() => downloadPDF()}
-            className="gap-2 h-11 font-semibold"
+            onClick={() => triggerPrint("download")}
+            className="gap-1.5 h-11 font-semibold text-sm"
           >
             <Download className="w-4 h-4" />
-            Download PDF
+            PDF
           </Button>
           <Button
             type="button"
             data-ocid="quote.whatsapp.button"
-            onClick={() => shareWhatsApp()}
-            className="gap-2 h-11 font-semibold"
+            onClick={() => triggerPrint("share")}
+            className="gap-1.5 h-11 font-semibold text-sm"
             style={{ background: "#25D366", color: "#fff" }}
           >
             <Share2 className="w-4 h-4" />
-            Share on WhatsApp
+            Share
           </Button>
         </div>
       </div>
@@ -507,36 +723,12 @@ export function QuoteBuilderTab() {
           className="overflow-hidden"
         >
           <CardHeader className="pb-2 pt-4 px-4">
-            <div className="flex items-center justify-between">
-              <h3
-                className="font-bold text-base"
-                style={{ color: "oklch(var(--foreground))" }}
-              >
-                Quotation Preview
-              </h3>
-              <button
-                type="button"
-                data-ocid="quote.print.button"
-                onClick={() => {
-                  const html = buildPrintableHTML();
-                  const win = window.open("", "_blank");
-                  if (win) {
-                    win.document.write(html);
-                    win.document.close();
-                    win.focus();
-                    setTimeout(() => win.print(), 300);
-                  }
-                }}
-                className="flex items-center gap-1 text-xs px-3 py-1 rounded-lg font-semibold"
-                style={{
-                  background: "oklch(var(--primary) / 0.1)",
-                  color: "oklch(var(--primary))",
-                }}
-              >
-                <Printer className="w-3.5 h-3.5" />
-                Print
-              </button>
-            </div>
+            <h3
+              className="font-bold text-base"
+              style={{ color: "oklch(var(--foreground))" }}
+            >
+              Quotation Preview
+            </h3>
           </CardHeader>
           <CardContent className="px-4 pb-5">
             {/* Preview Header */}
@@ -557,6 +749,23 @@ export function QuoteBuilderTab() {
                 QUOTATION
               </div>
             </div>
+
+            {/* Garment Image in Preview */}
+            {garmentImage && (
+              <div className="flex justify-center mb-4">
+                <img
+                  src={garmentImage}
+                  alt="Garment"
+                  style={{
+                    maxWidth: "400px",
+                    maxHeight: "250px",
+                    objectFit: "contain",
+                    borderRadius: "8px",
+                    border: "1px solid oklch(var(--border))",
+                  }}
+                />
+              </div>
+            )}
 
             {/* Meta */}
             <div
@@ -589,7 +798,7 @@ export function QuoteBuilderTab() {
                   >
                     <th className="text-left px-3 py-2.5 font-bold">Work</th>
                     <th className="text-right px-3 py-2.5 font-bold">
-                      Rate (₹)
+                      Rate (&#8377;)
                     </th>
                   </tr>
                 </thead>
@@ -608,7 +817,7 @@ export function QuoteBuilderTab() {
                       >
                         <td className="px-3 py-2">{w.name}</td>
                         <td className="px-3 py-2 text-right">
-                          {Number.isNaN(price) ? "-" : `₹${price}`}
+                          {Number.isNaN(price) ? "-" : `\u20B9${price}`}
                         </td>
                       </tr>
                     );
@@ -629,7 +838,7 @@ export function QuoteBuilderTab() {
                       className="px-3 py-3 text-right font-black text-base"
                       style={{ color: "oklch(var(--primary))" }}
                     >
-                      ₹{totalCMT.toFixed(2)}
+                      &#8377;{totalCMT.toFixed(2)}
                     </td>
                   </tr>
                 </tbody>
@@ -676,7 +885,6 @@ export function QuoteBuilderTab() {
                   background: "oklch(var(--muted) / 0.3)",
                 }}
               >
-                {/* Quote card header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <div
@@ -696,11 +904,10 @@ export function QuoteBuilderTab() {
                     className="text-sm font-black shrink-0"
                     style={{ color: "oklch(var(--primary))" }}
                   >
-                    ₹{q.totalCMT.toFixed(2)}
+                    &#8377;{q.totalCMT.toFixed(2)}
                   </div>
                 </div>
 
-                {/* Action buttons */}
                 <div className="flex gap-2 flex-wrap">
                   <button
                     type="button"
@@ -718,13 +925,37 @@ export function QuoteBuilderTab() {
                   </button>
                   <button
                     type="button"
-                    data-ocid={`quote.history.download.button.${idx + 1}`}
+                    data-ocid={`quote.history.print.button.${idx + 1}`}
                     onClick={() =>
-                      downloadPDF(
+                      openPrintWindow(
                         q.clientName,
                         q.articleName,
                         q.works,
                         q.totalCMT,
+                        q.garmentImage,
+                      )
+                    }
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors"
+                    style={{
+                      background: "oklch(var(--muted))",
+                      color: "oklch(var(--foreground))",
+                      borderColor: "oklch(var(--border))",
+                    }}
+                  >
+                    <Printer className="w-3 h-3" />
+                    Print
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid={`quote.history.download.button.${idx + 1}`}
+                    onClick={() =>
+                      triggerPrint(
+                        "download",
+                        q.clientName,
+                        q.articleName,
+                        q.works,
+                        q.totalCMT,
+                        q.garmentImage,
                       )
                     }
                     className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors"
@@ -741,11 +972,13 @@ export function QuoteBuilderTab() {
                     type="button"
                     data-ocid={`quote.history.whatsapp.button.${idx + 1}`}
                     onClick={() =>
-                      shareWhatsApp(
+                      triggerPrint(
+                        "share",
                         q.clientName,
                         q.articleName,
                         q.works,
                         q.totalCMT,
+                        q.garmentImage,
                       )
                     }
                     className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold border transition-colors"
@@ -756,7 +989,7 @@ export function QuoteBuilderTab() {
                     }}
                   >
                     <Share2 className="w-3 h-3" />
-                    WhatsApp
+                    Share PDF
                   </button>
                   <button
                     type="button"
@@ -784,6 +1017,196 @@ export function QuoteBuilderTab() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+// ── Inline-styled print template for html2canvas ─────────────────────────
+
+function QuotePrintTemplate({
+  clientName,
+  articleName,
+  works,
+  totalCMT,
+  garmentImage,
+  date,
+}: {
+  clientName: string;
+  articleName: string;
+  works: WorkItem[];
+  totalCMT: number;
+  garmentImage?: string;
+  date: string;
+}) {
+  const validWorks = works.filter((w) => w.name.trim());
+  return (
+    <div
+      style={{
+        fontFamily: "Arial, sans-serif",
+        padding: "32px",
+        maxWidth: "700px",
+        margin: "0 auto",
+        color: "#1a1a1a",
+        background: "#fff",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          textAlign: "center",
+          marginBottom: "20px",
+          borderBottom: "2px solid #222",
+          paddingBottom: "16px",
+        }}
+      >
+        <h1
+          style={{
+            fontSize: "28px",
+            fontWeight: 900,
+            letterSpacing: "2px",
+            margin: "0 0 4px 0",
+            textTransform: "uppercase",
+          }}
+        >
+          SHIVA GARMENT
+        </h1>
+        <h2
+          style={{
+            fontSize: "18px",
+            fontWeight: 700,
+            letterSpacing: "4px",
+            margin: 0,
+            textTransform: "uppercase",
+            color: "#444",
+          }}
+        >
+          QUOTATION
+        </h2>
+      </div>
+
+      {/* Garment Image */}
+      {garmentImage && (
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <img
+            src={garmentImage}
+            alt="Garment"
+            style={{
+              maxWidth: "400px",
+              maxHeight: "300px",
+              objectFit: "contain",
+              display: "block",
+              margin: "0 auto",
+              borderRadius: "6px",
+              border: "1px solid #ddd",
+            }}
+          />
+          <p style={{ fontSize: "11px", color: "#888", marginTop: "6px" }}>
+            Garment Reference Photo
+          </p>
+        </div>
+      )}
+
+      {/* Meta */}
+      <div style={{ fontSize: "13px", marginBottom: "20px", lineHeight: 1.8 }}>
+        <div>
+          <strong>Date:</strong> {date}
+        </div>
+        <div>
+          <strong>Client Name:</strong> {clientName}
+        </div>
+        <div>
+          <strong>Article Name:</strong> {articleName}
+        </div>
+      </div>
+
+      {/* Table */}
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          fontSize: "14px",
+        }}
+      >
+        <thead>
+          <tr style={{ background: "#1a1a1a", color: "#fff" }}>
+            <th
+              style={{
+                padding: "10px 14px",
+                textAlign: "left",
+                fontWeight: 700,
+              }}
+            >
+              Work
+            </th>
+            <th
+              style={{
+                padding: "10px 14px",
+                textAlign: "right",
+                fontWeight: 700,
+              }}
+            >
+              Rate (₹)
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {validWorks.map((w, i) => {
+            const price = Number.parseFloat(w.price);
+            return (
+              <tr
+                key={w.id}
+                style={{
+                  background: i % 2 === 0 ? "#f5f5f5" : "#fff",
+                  borderBottom: "1px solid #e5e5e5",
+                }}
+              >
+                <td style={{ padding: "9px 14px" }}>{w.name}</td>
+                <td style={{ padding: "9px 14px", textAlign: "right" }}>
+                  {Number.isNaN(price) ? "-" : `₹${price}`}
+                </td>
+              </tr>
+            );
+          })}
+          <tr
+            style={{
+              background: "#f5f5f5",
+              borderTop: "2px solid #1a1a1a",
+            }}
+          >
+            <td
+              style={{
+                padding: "10px 14px",
+                fontWeight: 900,
+                fontSize: "16px",
+              }}
+            >
+              Total CMT per piece
+            </td>
+            <td
+              style={{
+                padding: "10px 14px",
+                textAlign: "right",
+                fontWeight: 900,
+                fontSize: "16px",
+              }}
+            >
+              ₹{totalCMT.toFixed(2)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Footer */}
+      <div
+        style={{
+          marginTop: "40px",
+          textAlign: "center",
+          fontSize: "11px",
+          color: "#888",
+        }}
+      >
+        Shiva Garment — Quotation generated on {date}
+      </div>
     </div>
   );
 }

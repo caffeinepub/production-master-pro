@@ -1,31 +1,42 @@
 # Production Master Pro
 
 ## Current State
-The app is a full-stack garment factory management system on ICP with Internet Identity auth. Backend uses Motoko stable storage. Frontend uses React + TypeScript. All major tabs (Item Master, Tailor, Additional Work, Dispatch, Payment, Finished Stock, Fabric Planner, Quote Builder) are implemented. The app occasionally fails with IC0508 (canister stopped) and similar transient errors that surface as raw system error messages to the user.
+The app already has an offline-first architecture including:
+- IndexedDB/localStorage-based offlineCache.ts
+- Sync queue (syncQueue.ts) for item_master, tailor, additional_work, dispatch
+- SyncStatusIndicator in header (small pill: Online/Offline/Syncing)
+- Manual Sync Now button in Backup tab
+- Retry logic (retryUtils.ts) for transient canister errors
+- Challan and Quotes already stored entirely in localStorage (no backend)
+
+What is missing:
+- Prominent "Offline Mode Active" banner visible across all tabs
+- Server-busy detection (currently only uses navigator.onLine; doesn't detect when canister returns busy/overloaded errors)
+- Global offline state context shared across the app
+- "Sync Completed" toast notification after auto-sync finishes
+- Sync queue auto-flush with dedup and success notification
 
 ## Requested Changes (Diff)
 
 ### Add
-- `retryUtils.ts`: async retry helper with 3 attempts, exponential backoff, and clean error message translation (IC0508 → "Server temporarily busy. Please try again.", reject/replica → "Connection interrupted. Retrying…")
-- `ErrorBoundary.tsx`: React class component catching unhandled render errors, preventing full app crash, showing a "Recover" button
-- Backend try/catch wrappers on all major write methods: addItemMaster, updateItemMaster, addTailorEntry, addAdditionalWorkRecord, addDispatchRecord, addPayment and their update/delete counterparts
-- Loading state and disabled-button protection in all save handlers
-- Input validation in all forms (required fields, no negatives, no empty article names)
+- `useOfflineMode.ts` hook: tracks both `navigator.onLine` (network) AND server-busy state (canister overloaded/stopped); exposes `isOffline`, `isServerBusy`, `markServerBusy()`, `markServerOnline()`, `pendingCount`
+- `OfflineBanner.tsx` component: sticky banner below header showing "Offline Mode Active – Data will sync when server reconnects." when offline or server-busy; hides when online+synced; shows "Sync Completed" flash
+- Global `OfflineModeContext` so any module can call `markServerBusy()` when all retries fail
 
 ### Modify
-- `main.tsx`: wrap `<App />` with `<ErrorBoundary>`
-- `ItemMasterTab.tsx`, `TailorTab.tsx`, `AdditionalWorkTab.tsx`, `DispatchTab.tsx`: replace raw catch blocks with `withRetry()` calls and clean error messages
-- All tab load functions: use `.catch(() => [])` already in place, no change needed — keep as is
-- Error toast messages: replace raw IC error strings with user-friendly equivalents
+- `App.tsx`: add `<OfflineBanner />` between header and main content; wrap app in `OfflineModeProvider`
+- `retryUtils.ts`: when all retries exhausted, dispatch `serverBusy` custom event that `useOfflineMode` listens to
+- `syncQueue.ts`: after successful flush, dispatch `syncCompleted` custom event with synced count
+- `SyncStatusIndicator.tsx`: add "Server Busy" state display
+- `BackupRestoreTab.tsx`: add "Sync Data" button label (already has Sync Now)
 
 ### Remove
-- Raw IC error codes/strings exposed to user (IC0508, reject code, replica rejection)
+- Nothing removed
 
 ## Implementation Plan
-1. Write `src/frontend/src/utils/retryUtils.ts` with `withRetry<T>(fn, retries=3)` and `cleanErrorMessage(err)` helpers
-2. Write `src/frontend/src/components/ErrorBoundary.tsx`
-3. Update `src/frontend/src/main.tsx` to wrap App with ErrorBoundary
-4. Update ItemMasterTab save handler to use withRetry
-5. Update TailorTab, AdditionalWorkTab, DispatchTab save handlers similarly
-6. Add try/catch to all Motoko backend write methods
-7. Validate and deploy
+1. Create `useOfflineMode.ts` with network + server-busy detection and custom event system
+2. Create `OfflineBanner.tsx` with animated banner, offline indicator, and sync-complete flash
+3. Update `retryUtils.ts` to dispatch `serverBusy` event on final failure
+4. Update `syncQueue.ts` to dispatch `syncCompleted` event with count
+5. Update `App.tsx` to include `OfflineBanner`
+6. Update `SyncStatusIndicator.tsx` to show server-busy state

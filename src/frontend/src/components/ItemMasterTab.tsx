@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Camera, Image, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ItemMaster } from "../backend";
 import { useActor } from "../hooks/useActor";
@@ -11,6 +11,12 @@ import {
   loadArticleRates,
   saveArticleRates,
 } from "../utils/articleRates";
+import {
+  compressImage,
+  deleteArticleImage,
+  getArticleImage,
+  saveArticleImage,
+} from "../utils/imageUtils";
 import { getFromCache, saveToCache } from "../utils/offlineCache";
 import { cleanErrorMessage, withRetry } from "../utils/retryUtils";
 import { enqueuePending } from "../utils/syncQueue";
@@ -73,6 +79,12 @@ interface FormState {
   colorEntries: ColorEntry[];
 }
 
+interface CustomSizeInput {
+  id: number;
+  name: string;
+  qty: string;
+}
+
 const emptyForm = (): FormState => ({
   articleNo: "",
   totalQuantity: "",
@@ -108,6 +120,9 @@ function parseColorSizeData(raw: string): ColorEntry[] {
   }
 }
 
+let _customSizeIdCounter = 0;
+const nextCustomSizeId = () => ++_customSizeIdCounter;
+
 export function ItemMasterTab() {
   const { actor } = useActor();
   const [items, setItems] = useState<ItemMaster[]>([]);
@@ -121,12 +136,23 @@ export function ItemMasterTab() {
     "meters",
   );
 
+  // Article image state
+  const [articleImageUrl, setArticleImageUrl] = useState<string>("");
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  // Detail modal state
+  const [detailItem, setDetailItem] = useState<ItemMaster | null>(null);
+
   // Color add form state
   const [showColorForm, setShowColorForm] = useState(false);
   const [editColorIndex, setEditColorIndex] = useState<number | null>(null);
   const [newColorName, setNewColorName] = useState("");
   const [newColorSizes, setNewColorSizes] = useState<Record<string, string>>(
     {},
+  );
+  const [customSizeInputs, setCustomSizeInputs] = useState<CustomSizeInput[]>(
+    [],
   );
 
   const loadItems = async () => {
@@ -144,17 +170,15 @@ export function ItemMasterTab() {
     try {
       const data = await actor.getItemMasters();
       setItems(data as typeof data);
-      // Save to cache on success (fire-and-forget)
       saveToCache("ProductionMasterCache", "cache", "items_cache", data).catch(
         () => {},
       );
     } catch {
       if (!cached || cached.length === 0) {
-        // No cache either — nothing to show
+        // no-op
       } else {
-        // Show cached data silently (toast only if first time seeing server error)
-        import("sonner").then(({ toast }) => {
-          toast.info("Showing cached data – server unavailable", {
+        import("sonner").then(({ toast: t }) => {
+          t.info("Showing cached data – server unavailable", {
             id: "items-cached",
           });
         });
@@ -166,6 +190,15 @@ export function ItemMasterTab() {
   useEffect(() => {
     loadItems();
   }, [actor]);
+
+  const handleImageFile = async (file: File) => {
+    try {
+      const compressed = await compressImage(file);
+      setArticleImageUrl(compressed);
+    } catch {
+      toast.error("Failed to process image. Please try again.");
+    }
+  };
 
   // Sum all quantities across all colors and all sizes
   const totalColorSizeSum = form.colorEntries.reduce((total, ce) => {
@@ -186,21 +219,19 @@ export function ItemMasterTab() {
       toast.error("Article Number is required");
       return;
     }
+    if (!articleImageUrl && editId === null) {
+      toast.error("Article Image is required");
+      return;
+    }
     if (totalQtyNum <= 0) {
       toast.error("Total Quantity must be greater than 0");
       return;
     }
-    // Colors and sizes are optional -- no blocking validation
 
-    // Build colorSizeData JSON
     const colorSizeData = JSON.stringify(
       form.colorEntries.map((ce) => ({ color: ce.color, sizes: ce.sizes })),
     );
-
-    // Legacy colors (comma-joined)
     const colorsStr = form.colorEntries.map((ce) => ce.color).join(",");
-
-    // Legacy flat size fields: sum each size across all colors
     const flatSizes: Record<string, number> = {};
     for (const size of ALL_SIZES) {
       flatSizes[size] = form.colorEntries.reduce(
@@ -208,12 +239,10 @@ export function ItemMasterTab() {
         0,
       );
     }
-
     const workTypes = form.selectedWorkTypes.join(",");
 
     setLoading(true);
     try {
-      // --- backend call only (isolated so post-save ops don't trigger this catch) ---
       if (editId !== null) {
         const ok = await withRetry(() =>
           actor.updateItemMaster(
@@ -263,7 +292,6 @@ export function ItemMasterTab() {
       }
     } catch (saveErr) {
       console.error("[ItemMaster] Backend save error:", saveErr);
-      // Enqueue for offline sync and add to local UI
       if (editId === null) {
         const pendingData = {
           articleNo: form.articleNo.trim(),
@@ -286,18 +314,21 @@ export function ItemMasterTab() {
       return;
     }
 
-    // --- post-save operations (errors here do NOT show "Failed to save item") ---
+    // post-save
     const isUpdate = editId !== null;
     saveArticleRates(form.articleNo, rates);
+    if (articleImageUrl) {
+      saveArticleImage(form.articleNo.trim(), articleImageUrl);
+    }
     if (fabricPerPiece > 0 && actor) {
       actor.setFabricPerPiece(form.articleNo, fabricPerPiece).catch(() => {});
     }
-    // Persist fabric unit to localStorage
     localStorage.setItem(`fabricUnit_${form.articleNo}`, fabricUnit);
     setFabricPerPiece(0);
     setFabricUnit("meters");
     setForm(emptyForm());
     setRates(emptyRates());
+    setArticleImageUrl("");
     setEditId(null);
     setShowForm(false);
     toast.success(
@@ -305,7 +336,6 @@ export function ItemMasterTab() {
     );
     setLoading(false);
 
-    // Refresh list — failure here is non-critical
     await loadItems().catch((e) =>
       console.warn("[ItemMaster] Refresh failed:", e),
     );
@@ -339,9 +369,7 @@ export function ItemMasterTab() {
       customWorkType: "",
       colorEntries: entries,
     });
-    // Load saved rates for this article
     setRates(loadArticleRates(item.articleNo));
-    // Load saved fabric unit for this article
     const savedUnit = localStorage.getItem(`fabricUnit_${item.articleNo}`) as
       | "meters"
       | "grams"
@@ -354,6 +382,9 @@ export function ItemMasterTab() {
         .then((v) => setFabricPerPiece(v))
         .catch(() => {});
     }
+    // Load saved image
+    const img = getArticleImage(item.articleNo);
+    setArticleImageUrl(img || "");
     setEditId(item.id);
     setShowForm(true);
   };
@@ -362,6 +393,9 @@ export function ItemMasterTab() {
     if (!actor) return;
     if (!confirm("Delete this item?")) return;
     try {
+      // Also clean up image from localStorage
+      const item = items.find((i) => i.id === id);
+      if (item) deleteArticleImage(item.articleNo);
       await actor.deleteItemMaster(id);
       toast.success("Deleted");
       await loadItems();
@@ -393,10 +427,19 @@ export function ItemMasterTab() {
     }
   };
 
+  const closeColorForm = () => {
+    setShowColorForm(false);
+    setEditColorIndex(null);
+    setNewColorName("");
+    setNewColorSizes({});
+    setCustomSizeInputs([]);
+  };
+
   const openAddColorForm = () => {
     setEditColorIndex(null);
     setNewColorName("");
     setNewColorSizes({});
+    setCustomSizeInputs([]);
     setShowColorForm(true);
   };
 
@@ -404,11 +447,18 @@ export function ItemMasterTab() {
     const ce = form.colorEntries[idx];
     setEditColorIndex(idx);
     setNewColorName(ce.color);
-    setNewColorSizes(
-      Object.fromEntries(
-        Object.entries(ce.sizes).map(([k, v]) => [k, String(v)]),
-      ),
-    );
+    const predefinedSizeSet = new Set<string>(ALL_SIZES);
+    const predefined: Record<string, string> = {};
+    const custom: CustomSizeInput[] = [];
+    for (const [k, v] of Object.entries(ce.sizes)) {
+      if (predefinedSizeSet.has(k)) {
+        predefined[k] = String(v);
+      } else {
+        custom.push({ id: nextCustomSizeId(), name: k, qty: String(v) });
+      }
+    }
+    setNewColorSizes(predefined);
+    setCustomSizeInputs(custom);
     setShowColorForm(true);
   };
 
@@ -420,11 +470,13 @@ export function ItemMasterTab() {
     const sizesObj: Record<string, number> = {};
     for (const size of ALL_SIZES) {
       const val = Number.parseFloat(newColorSizes[size] || "0") || 0;
-      if (val > 0) {
-        sizesObj[size] = val;
-      }
+      if (val > 0) sizesObj[size] = val;
     }
-    // No blocking if no sizes -- sizes are optional
+    for (const cs of customSizeInputs) {
+      const name = cs.name.trim();
+      const qty = Number.parseFloat(cs.qty) || 0;
+      if (name && qty > 0) sizesObj[name] = qty;
+    }
     const newEntry: ColorEntry = {
       color: newColorName.trim(),
       sizes: sizesObj,
@@ -446,10 +498,7 @@ export function ItemMasterTab() {
       }
       return { ...f, colorEntries: entries };
     });
-    setShowColorForm(false);
-    setNewColorName("");
-    setNewColorSizes({});
-    setEditColorIndex(null);
+    closeColorForm();
   };
 
   const removeColorEntry = (idx: number) => {
@@ -459,10 +508,8 @@ export function ItemMasterTab() {
     }));
   };
 
-  // Get all work types that need rates (predefined selected + custom)
   const workTypesNeedingRates = form.selectedWorkTypes;
 
-  // Get rate for a work type from rates state
   const getRateForWT = (wt: string): string => {
     const key = WORK_TYPE_RATE_KEYS[wt];
     if (key) return String((rates[key] as number) || "");
@@ -482,10 +529,7 @@ export function ItemMasterTab() {
     }
   };
 
-  // Get saved rates display for item list
-  const getItemRates = (articleNo: string) => {
-    return loadArticleRates(articleNo);
-  };
+  const getItemRates = (articleNo: string) => loadArticleRates(articleNo);
 
   return (
     <div className="p-4 pb-24 space-y-4">
@@ -504,6 +548,7 @@ export function ItemMasterTab() {
             setRates(emptyRates());
             setEditId(null);
             setFabricUnit("meters");
+            setArticleImageUrl("");
             setShowForm(true);
             setShowColorForm(false);
           }}
@@ -540,6 +585,114 @@ export function ItemMasterTab() {
             />
           </div>
 
+          {/* Article Image Upload */}
+          <div>
+            <Label>
+              Article Image{" "}
+              {editId !== null ? (
+                <span
+                  className="text-xs font-normal"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  (Optional)
+                </span>
+              ) : (
+                <span
+                  className="text-xs font-normal"
+                  style={{ color: "oklch(var(--destructive))" }}
+                >
+                  *
+                </span>
+              )}
+            </Label>
+
+            {/* Hidden file inputs */}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) await handleImageFile(file);
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={galleryInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (file) await handleImageFile(file);
+                e.target.value = "";
+              }}
+            />
+
+            <div className="flex gap-2 mt-1">
+              <Button
+                data-ocid="item_master.image_camera_button"
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <Camera className="w-4 h-4 mr-1" />
+                Camera
+              </Button>
+              <Button
+                data-ocid="item_master.image_gallery_button"
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => galleryInputRef.current?.click()}
+              >
+                <Image className="w-4 h-4 mr-1" />
+                Gallery
+              </Button>
+            </div>
+
+            {articleImageUrl ? (
+              <div className="relative mt-2">
+                <img
+                  src={articleImageUrl}
+                  alt="Article preview"
+                  className="w-full max-h-48 object-contain rounded-lg"
+                  style={{
+                    border: "1px solid oklch(var(--border))",
+                    background: "oklch(var(--muted) / 0.3)",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setArticleImageUrl("")}
+                  className="absolute top-1 right-1 rounded-full p-1"
+                  style={{
+                    background: "oklch(var(--destructive))",
+                    color: "oklch(var(--destructive-foreground))",
+                  }}
+                  aria-label="Remove image"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <div
+                className="mt-2 rounded-lg border-2 border-dashed flex items-center justify-center h-24 text-sm"
+                style={{
+                  borderColor: "oklch(var(--border))",
+                  color: "oklch(var(--muted-foreground))",
+                }}
+              >
+                No image uploaded
+              </div>
+            )}
+          </div>
+
           <div>
             <Label>Total Cutting Quantity *</Label>
             <Input
@@ -555,62 +708,32 @@ export function ItemMasterTab() {
 
           <div>
             <Label>Fabric Consumption Per Piece — Optional</Label>
-            {/* Unit toggle */}
             <div className="flex gap-2 mt-1 mb-2">
-              <button
-                type="button"
-                onClick={() => setFabricUnit("meters")}
-                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
-                style={{
-                  background:
-                    fabricUnit === "meters"
-                      ? "oklch(var(--primary))"
-                      : "transparent",
-                  color:
-                    fabricUnit === "meters"
-                      ? "oklch(var(--primary-foreground))"
-                      : "oklch(var(--foreground))",
-                  borderColor: "oklch(var(--border))",
-                }}
-              >
-                Meters
-              </button>
-              <button
-                type="button"
-                onClick={() => setFabricUnit("grams")}
-                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
-                style={{
-                  background:
-                    fabricUnit === "grams"
-                      ? "oklch(var(--primary))"
-                      : "transparent",
-                  color:
-                    fabricUnit === "grams"
-                      ? "oklch(var(--primary-foreground))"
-                      : "oklch(var(--foreground))",
-                  borderColor: "oklch(var(--border))",
-                }}
-              >
-                Grams
-              </button>
-              <button
-                type="button"
-                onClick={() => setFabricUnit("kg")}
-                className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
-                style={{
-                  background:
-                    fabricUnit === "kg"
-                      ? "oklch(var(--primary))"
-                      : "transparent",
-                  color:
-                    fabricUnit === "kg"
-                      ? "oklch(var(--primary-foreground))"
-                      : "oklch(var(--foreground))",
-                  borderColor: "oklch(var(--border))",
-                }}
-              >
-                KG
-              </button>
+              {(["meters", "grams", "kg"] as const).map((unit) => (
+                <button
+                  key={unit}
+                  type="button"
+                  onClick={() => setFabricUnit(unit)}
+                  className="px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors"
+                  style={{
+                    background:
+                      fabricUnit === unit
+                        ? "oklch(var(--primary))"
+                        : "transparent",
+                    color:
+                      fabricUnit === unit
+                        ? "oklch(var(--primary-foreground))"
+                        : "oklch(var(--foreground))",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                >
+                  {unit === "meters"
+                    ? "Meters"
+                    : unit === "grams"
+                      ? "Grams"
+                      : "KG"}
+                </button>
+              ))}
             </div>
             <Input
               data-ocid="item_master.input"
@@ -786,6 +909,92 @@ export function ItemMasterTab() {
                   ))}
                 </div>
               </div>
+
+              {/* Custom Sizes Section */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span
+                    className="text-xs font-semibold"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    Custom Sizes
+                  </span>
+                  <span
+                    className="text-xs"
+                    style={{ color: "oklch(var(--muted-foreground))" }}
+                  >
+                    (Optional)
+                  </span>
+                </div>
+
+                {customSizeInputs.length > 0 && (
+                  <div className="space-y-2 mb-2">
+                    {customSizeInputs.map((cs, csIdx) => (
+                      <div key={cs.id} className="flex items-center gap-2">
+                        <Input
+                          value={cs.name}
+                          onChange={(e) =>
+                            setCustomSizeInputs((prev) =>
+                              prev.map((item, i) =>
+                                i === csIdx
+                                  ? { ...item, name: e.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          placeholder="Size name (e.g. Free Size, 28)"
+                          className="text-sm flex-1"
+                        />
+                        <Input
+                          type="number"
+                          value={cs.qty}
+                          onChange={(e) =>
+                            setCustomSizeInputs((prev) =>
+                              prev.map((item, i) =>
+                                i === csIdx
+                                  ? { ...item, qty: e.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          placeholder="Qty"
+                          className="text-sm w-20"
+                          min="0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCustomSizeInputs((prev) =>
+                              prev.filter((_, i) => i !== csIdx),
+                            )
+                          }
+                          className="p-1 rounded transition-colors"
+                          style={{ color: "oklch(var(--destructive))" }}
+                          aria-label="Remove custom size"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Button
+                  data-ocid="item_master.add_custom_size_button"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCustomSizeInputs((prev) => [
+                      ...prev,
+                      { id: nextCustomSizeId(), name: "", qty: "" },
+                    ])
+                  }
+                >
+                  + Add Custom Size
+                </Button>
+              </div>
+
               <div className="flex gap-2">
                 <Button
                   type="button"
@@ -799,12 +1008,7 @@ export function ItemMasterTab() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setShowColorForm(false);
-                    setEditColorIndex(null);
-                    setNewColorName("");
-                    setNewColorSizes({});
-                  }}
+                  onClick={closeColorForm}
                 >
                   Cancel
                 </Button>
@@ -919,7 +1123,7 @@ export function ItemMasterTab() {
             </div>
           )}
 
-          {/* ===== WORK TYPE RATES SECTION ===== */}
+          {/* Work Type Rates */}
           <div
             className="rounded-xl border p-3 space-y-3"
             style={{
@@ -941,7 +1145,6 @@ export function ItemMasterTab() {
               article in Tailor and Additional Work tabs.
             </p>
 
-            {/* Always show Tailor Rate */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Tailor Stitching Rate</Label>
@@ -969,7 +1172,6 @@ export function ItemMasterTab() {
                 </div>
               </div>
 
-              {/* Show predefined work type rates */}
               {PREDEFINED_WORK_TYPES.filter(
                 (wt) => wt !== "Tailor Stitching",
               ).map((wt) => (
@@ -994,7 +1196,6 @@ export function ItemMasterTab() {
                 </div>
               ))}
 
-              {/* Custom work types selected */}
               {workTypesNeedingRates
                 .filter((wt) => !PREDEFINED_WORK_TYPES.includes(wt))
                 .map((wt) => (
@@ -1043,6 +1244,7 @@ export function ItemMasterTab() {
                 setRates(emptyRates());
                 setEditId(null);
                 setFabricUnit("meters");
+                setArticleImageUrl("");
               }}
             >
               Cancel
@@ -1065,18 +1267,32 @@ export function ItemMasterTab() {
         {items.map((item, idx) => {
           const colorEntries = parseColorSizeData(item.colorSizeData);
           const savedRates = getItemRates(item.articleNo);
+          const imgUrl = getArticleImage(item.articleNo);
           return (
             <div
               key={Number(item.id)}
               data-ocid={`item_master.item.${idx + 1}`}
-              className="rounded-xl border p-3 space-y-2"
+              className="rounded-xl border p-3 space-y-2 cursor-pointer active:opacity-80 transition-opacity"
               style={{
                 background: "oklch(var(--card))",
                 borderColor: "oklch(var(--border))",
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setDetailItem(item);
+              }}
+              onClick={() => setDetailItem(item)}
             >
-              <div className="flex items-start justify-between">
-                <div>
+              <div className="flex items-start gap-3">
+                {/* Thumbnail */}
+                {imgUrl && (
+                  <img
+                    src={imgUrl}
+                    alt={item.articleNo}
+                    className="w-12 h-12 object-cover rounded-lg flex-shrink-0"
+                    style={{ border: "1px solid oklch(var(--border))" }}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
                   <p
                     className="font-bold"
                     style={{ color: "oklch(var(--foreground))" }}
@@ -1087,30 +1303,18 @@ export function ItemMasterTab() {
                     className="text-sm"
                     style={{ color: "oklch(var(--muted-foreground))" }}
                   >
-                    Total Qty: {item.totalQuantity}
+                    Total Qty: {String(item.totalQuantity)}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    data-ocid={`item_master.edit_button.${idx + 1}`}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleEdit(item)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    data-ocid={`item_master.delete_button.${idx + 1}`}
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDelete(item.id)}
-                  >
-                    Del
-                  </Button>
-                </div>
+                {/* Tap hint */}
+                <span
+                  className="text-xs flex-shrink-0 self-center"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  ›
+                </span>
               </div>
 
-              {/* Color-wise breakdown */}
               {colorEntries.length > 0 ? (
                 <div className="space-y-1">
                   {colorEntries.map((ce) => (
@@ -1170,7 +1374,6 @@ export function ItemMasterTab() {
                 </p>
               )}
 
-              {/* Rates summary */}
               {(savedRates.tailorRate > 0 ||
                 savedRates.overlockRate > 0 ||
                 savedRates.foldingRate > 0 ||
@@ -1255,6 +1458,355 @@ export function ItemMasterTab() {
           );
         })}
       </div>
+
+      {/* Item Detail Modal */}
+      {detailItem && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col"
+          style={{ background: "oklch(var(--background))" }}
+        >
+          {/* Header */}
+          <div
+            className="flex items-center gap-3 p-4 border-b"
+            style={{ borderColor: "oklch(var(--border))" }}
+          >
+            <button
+              data-ocid="item_master.detail.close_button"
+              type="button"
+              onClick={() => setDetailItem(null)}
+              className="flex items-center gap-1 text-sm font-medium"
+              style={{ color: "oklch(var(--primary))" }}
+            >
+              ← Back
+            </button>
+            <h2
+              className="font-bold text-lg flex-1"
+              style={{ color: "oklch(var(--foreground))" }}
+            >
+              Item Details
+            </h2>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Large image */}
+            {(() => {
+              const detailImg = getArticleImage(detailItem.articleNo);
+              return detailImg ? (
+                <img
+                  src={detailImg}
+                  alt={detailItem.articleNo}
+                  className="w-full max-h-72 object-contain rounded-xl"
+                  style={{
+                    border: "1px solid oklch(var(--border))",
+                    background: "oklch(var(--muted) / 0.3)",
+                  }}
+                />
+              ) : (
+                <div
+                  className="w-full h-48 rounded-xl flex items-center justify-center text-sm"
+                  style={{
+                    background: "oklch(var(--muted))",
+                    color: "oklch(var(--muted-foreground))",
+                  }}
+                >
+                  No Image
+                </div>
+              );
+            })()}
+
+            {/* Article details */}
+            <div
+              className="rounded-xl border p-4 space-y-2"
+              style={{
+                background: "oklch(var(--card))",
+                borderColor: "oklch(var(--border))",
+              }}
+            >
+              <div className="flex justify-between">
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  Article Number
+                </span>
+                <span
+                  className="text-sm font-bold"
+                  style={{ color: "oklch(var(--foreground))" }}
+                >
+                  {detailItem.articleNo}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: "oklch(var(--muted-foreground))" }}
+                >
+                  Total Quantity
+                </span>
+                <span
+                  className="text-sm"
+                  style={{ color: "oklch(var(--foreground))" }}
+                >
+                  {String(detailItem.totalQuantity)} pcs
+                </span>
+              </div>
+              {detailItem.hasAdditionalWork && detailItem.workTypes && (
+                <div className="flex justify-between">
+                  <span
+                    className="text-sm font-semibold"
+                    style={{ color: "oklch(var(--muted-foreground))" }}
+                  >
+                    Work Types
+                  </span>
+                  <span
+                    className="text-sm"
+                    style={{ color: "oklch(var(--primary))" }}
+                  >
+                    {detailItem.workTypes}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Colors & Sizes */}
+            {(() => {
+              const colorEntries = parseColorSizeData(detailItem.colorSizeData);
+              if (colorEntries.length === 0) return null;
+              return (
+                <div
+                  className="rounded-xl border p-4"
+                  style={{
+                    background: "oklch(var(--card))",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                >
+                  <p
+                    className="text-sm font-semibold mb-3"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    Colors &amp; Sizes
+                  </p>
+                  <div className="space-y-3">
+                    {colorEntries.map((ce) => (
+                      <div key={ce.color}>
+                        <p
+                          className="text-sm font-medium mb-1"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          {ce.color}
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {Object.entries(ce.sizes)
+                            .filter(([, v]) => v > 0)
+                            .map(([size, qty]) => (
+                              <span
+                                key={size}
+                                className="text-xs px-2 py-0.5 rounded-full"
+                                style={{
+                                  background: "oklch(var(--primary) / 0.12)",
+                                  color: "oklch(var(--primary))",
+                                }}
+                              >
+                                {size}: {qty}
+                              </span>
+                            ))}
+                          {Object.keys(ce.sizes).filter((k) => ce.sizes[k] > 0)
+                            .length === 0 && (
+                            <span
+                              className="text-xs"
+                              style={{
+                                color: "oklch(var(--muted-foreground))",
+                              }}
+                            >
+                              No sizes defined
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Rates */}
+            {(() => {
+              const r = loadArticleRates(detailItem.articleNo);
+              const hasRates =
+                r.tailorRate > 0 ||
+                r.overlockRate > 0 ||
+                r.foldingRate > 0 ||
+                r.pressRate > 0 ||
+                r.packingRate > 0 ||
+                r.threadCuttingRate > 0 ||
+                Object.keys(r.customRates).length > 0;
+              if (!hasRates) return null;
+              return (
+                <div
+                  className="rounded-xl border p-4"
+                  style={{
+                    background: "oklch(var(--card))",
+                    borderColor: "oklch(var(--border))",
+                  }}
+                >
+                  <p
+                    className="text-sm font-semibold mb-3"
+                    style={{ color: "oklch(var(--foreground))" }}
+                  >
+                    Work Rates
+                  </p>
+                  <div className="space-y-1">
+                    {r.tailorRate > 0 && (
+                      <div className="flex justify-between">
+                        <span
+                          className="text-sm"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
+                        >
+                          Tailor Stitching
+                        </span>
+                        <span
+                          className="text-sm font-medium"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          ₹{r.tailorRate}
+                        </span>
+                      </div>
+                    )}
+                    {r.overlockRate > 0 && (
+                      <div className="flex justify-between">
+                        <span
+                          className="text-sm"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
+                        >
+                          Overlock
+                        </span>
+                        <span
+                          className="text-sm font-medium"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          ₹{r.overlockRate}
+                        </span>
+                      </div>
+                    )}
+                    {r.foldingRate > 0 && (
+                      <div className="flex justify-between">
+                        <span
+                          className="text-sm"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
+                        >
+                          Folding
+                        </span>
+                        <span
+                          className="text-sm font-medium"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          ₹{r.foldingRate}
+                        </span>
+                      </div>
+                    )}
+                    {r.pressRate > 0 && (
+                      <div className="flex justify-between">
+                        <span
+                          className="text-sm"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
+                        >
+                          Press
+                        </span>
+                        <span
+                          className="text-sm font-medium"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          ₹{r.pressRate}
+                        </span>
+                      </div>
+                    )}
+                    {r.packingRate > 0 && (
+                      <div className="flex justify-between">
+                        <span
+                          className="text-sm"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
+                        >
+                          Packing
+                        </span>
+                        <span
+                          className="text-sm font-medium"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          ₹{r.packingRate}
+                        </span>
+                      </div>
+                    )}
+                    {r.threadCuttingRate > 0 && (
+                      <div className="flex justify-between">
+                        <span
+                          className="text-sm"
+                          style={{ color: "oklch(var(--muted-foreground))" }}
+                        >
+                          Thread Cutting
+                        </span>
+                        <span
+                          className="text-sm font-medium"
+                          style={{ color: "oklch(var(--foreground))" }}
+                        >
+                          ₹{r.threadCuttingRate}
+                        </span>
+                      </div>
+                    )}
+                    {Object.entries(r.customRates).map(([k, v]) =>
+                      v > 0 ? (
+                        <div key={k} className="flex justify-between">
+                          <span
+                            className="text-sm"
+                            style={{ color: "oklch(var(--muted-foreground))" }}
+                          >
+                            {k}
+                          </span>
+                          <span
+                            className="text-sm font-medium"
+                            style={{ color: "oklch(var(--foreground))" }}
+                          >
+                            ₹{v}
+                          </span>
+                        </div>
+                      ) : null,
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Action buttons */}
+          <div
+            className="p-4 border-t flex gap-3"
+            style={{ borderColor: "oklch(var(--border))" }}
+          >
+            <Button
+              data-ocid="item_master.detail.edit_button"
+              className="flex-1"
+              onClick={() => {
+                handleEdit(detailItem);
+                setDetailItem(null);
+                setShowForm(true);
+              }}
+            >
+              Edit Item
+            </Button>
+            <Button
+              data-ocid="item_master.detail.delete_button"
+              variant="destructive"
+              className="flex-1"
+              onClick={() => {
+                handleDelete(detailItem.id);
+                setDetailItem(null);
+              }}
+            >
+              Delete Item
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

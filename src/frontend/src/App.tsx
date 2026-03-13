@@ -4,6 +4,7 @@ import { AdditionalWorkTab } from "./components/AdditionalWorkTab";
 import { AppHeader } from "./components/AppHeader";
 import { BackupRestoreTab } from "./components/BackupRestoreTab";
 import { BottomNav } from "./components/BottomNav";
+import { ChallanPrintingTab } from "./components/ChallanPrintingTab";
 import { DispatchTab } from "./components/DispatchTab";
 import { FabricPlannerTab } from "./components/FabricPlannerTab";
 import { FinishedStockTab } from "./components/FinishedStockTab";
@@ -11,6 +12,7 @@ import { HistoryTab } from "./components/HistoryTab";
 import { ItemMasterTab } from "./components/ItemMasterTab";
 import { LoginScreen } from "./components/LoginScreen";
 import { MasterReportTab } from "./components/MasterReportTab";
+import { OfflineBanner } from "./components/OfflineBanner";
 import { PaymentTab } from "./components/PaymentTab";
 import { QuoteBuilderTab } from "./components/QuoteBuilderTab";
 import { SplashScreen } from "./components/SplashScreen";
@@ -28,7 +30,8 @@ export type TabId =
   | "finished_stock"
   | "fabric_planner"
   | "quote_builder"
-  | "backup_restore";
+  | "backup_restore"
+  | "challan_printing";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const HOST = typeof window !== "undefined" ? window.location.hostname : "";
@@ -81,6 +84,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <AppHeader activeTab={activeTab} onLogout={logout} />
+      <OfflineBanner />
 
       <main className="tab-content-area">
         {activeTab === "history" && <HistoryTab />}
@@ -94,6 +98,7 @@ export default function App() {
         {activeTab === "fabric_planner" && <FabricPlannerTab />}
         {activeTab === "quote_builder" && <QuoteBuilderTab />}
         {activeTab === "backup_restore" && <BackupRestoreTab />}
+        {activeTab === "challan_printing" && <ChallanPrintingTab />}
 
         <footer className="px-4 py-4 text-center">
           <a

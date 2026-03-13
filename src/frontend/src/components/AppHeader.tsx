@@ -33,6 +33,7 @@ const TAB_TITLES: Record<TabId, string> = {
   fabric_planner: "Fabric Planner",
   quote_builder: "Quote Builder",
   backup_restore: "Backup & Restore",
+  challan_printing: "Challan Printing",
 };
 
 interface AppHeaderProps {

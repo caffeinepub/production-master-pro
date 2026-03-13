@@ -5,6 +5,7 @@ import {
   FileText,
   IndianRupee,
   Package,
+  Printer,
   Ruler,
   Scissors,
   Send,
@@ -65,6 +66,12 @@ const NAV_ITEMS: Array<{
     label: "Fabric",
     icon: Ruler,
     ocid: "nav.fabric_planner_tab",
+  },
+  {
+    id: "challan_printing",
+    label: "Challan",
+    icon: Printer,
+    ocid: "nav.challan_printing_tab",
   },
   {
     id: "quote_builder",
